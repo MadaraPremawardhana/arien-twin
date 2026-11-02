@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ARIEN Twin Studio</title>
+<meta name="description" content="Browser digital twin of rooftop PV: 3D world, weather-driven physics models, cell-level shading.">
+<script>window.CESIUM_BASE_URL = 'https://cdn.jsdelivr.net/npm/cesium@1.146.0/Build/Cesium/';</script>
+<script>
+/* Worker fallback. Cesium starts its CDN workers from a small blob: script. Some embedded viewers
+   rewrite blob: URLs so workers cannot start; when that happens, retry the same tiny script as a data: URL. */
+(function () {
+  var OrigBlob = window.Blob, OrigWorker = window.Worker, texts = new WeakMap(), scripts = new Map();
+  if (!OrigBlob || !OrigWorker || !window.URL || !URL.createObjectURL) return;
+  function PatchedBlob(parts, opts) {
+    var b = new OrigBlob(parts, opts);
+    if (parts && parts.length === 1 && typeof parts[0] === 'string' && parts[0].length < 65536) texts.set(b, parts[0]);
+    return b;
+  }
+  PatchedBlob.prototype = OrigBlob.prototype;
+  window.Blob = PatchedBlob;
+  var origCreate = URL.createObjectURL.bind(URL);
+  URL.createObjectURL = function (obj) { var u = origCreate(obj); var s = obj && texts.get(obj); if (s) scripts.set(String(u), s); return u; };
+  function PatchedWorker(url, opts) {
+    try { return new OrigWorker(url, opts); }
+    catch (e) {
+      var s = scripts.get(String(url));
+      if (!s) throw e;
+      window.__arienWorkerFallback = true;
+      return new OrigWorker('data:text/javascript;charset=utf-8,' + encodeURIComponent(s), opts);
+    }
+  }
+  PatchedWorker.prototype = OrigWorker.prototype;
+  window.Worker = PatchedWorker;
+})();
+</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.146.0/Build/Cesium/Widgets/widgets.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Condensed:wght@500;600;700&display=swap">
+<style>/*@@STYLE@@*/</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-site" viewBox="0 0 24 24"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></symbol>
+    <symbol id="i-time" viewBox="0 0 24 24"><path d="M4 14a8 8 0 1 0 2.3-5.6"/><path d="M4 4v4.5h4.5"/><path d="M12 8v5l3 2"/></symbol>
+    <symbol id="i-panels" viewBox="0 0 24 24"><path d="M3 17l3-10h12l3 10z"/><path d="M9.5 7l-1.5 10M14.5 7l1.5 10M4.5 12h15"/><path d="M12 17v4M8 21h8"/></symbol>
+    <symbol id="i-objects" viewBox="0 0 24 24"><path d="M12 3c3.3 0 6 2.6 6 5.8 0 2.9-2.2 5.2-5 5.6V21h-2v-6.6c-2.8-.4-5-2.7-5-5.6C6 5.6 8.7 3 12 3z"/></symbol>
+    <symbol id="i-models" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></symbol>
+    <symbol id="i-shade" viewBox="0 0 24 24"><path d="M3 18h18"/><path d="M6 18V9l5-4v13"/><path d="M11 18l9-6"/><circle cx="19" cy="5" r="2"/></symbol>
+    <symbol id="i-meta" viewBox="0 0 24 24"><path d="M9 4a3 3 0 0 0-3 3 3 3 0 0 0-2 5 3 3 0 0 0 2 5 3 3 0 0 0 6 1V5a3 3 0 0 0-3-1zM15 4a3 3 0 0 1 3 3 3 3 0 0 1 2 5 3 3 0 0 1-2 5 3 3 0 0 1-6 1"/></symbol>
+    <symbol id="i-world" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.7 5.6 3.7 9s-1.2 6.4-3.7 9c-2.5-2.6-3.7-5.6-3.7-9S9.5 5.6 12 3z"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15l12-7.5z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 4.5h3.5v15H7zM13.5 4.5H17v15h-3.5z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M11 6l-6 6 6 6M19 6l-6 6 6 6"/></symbol>
+    <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M13 6l6 6-6 6M5 6l6 6-6 6"/></symbol>
+    <symbol id="i-start" viewBox="0 0 24 24"><path d="M6 5v14M18 6l-8 6 8 6z"/></symbol>
+    <symbol id="i-run" viewBox="0 0 24 24"><path d="M4 18l5-6-5-6M11 18l5-6-5-6M18 6v12"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V4M4 20h16"/><path d="M7 15l4-5 3 3 5-7"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3v13M7 11l5 5 5-5M5 21h14"/></symbol>
+  </defs>
+</svg>
+
+<div id="app">
+  <div id="globe" aria-label="3D site view"></div>
+
+  <nav id="rail" aria-label="Panels">
+    <a class="brand" title="ARIEN — Solar forecasts from physics"><span>AR</span><span>IEN</span></a>
+    <button data-panel="site" title="Location (1)"><svg><use href="#i-site"/></svg><span>Site</span></button>
+    <button data-panel="time" title="Weather period (2)"><svg><use href="#i-time"/></svg><span>Weather</span></button>
+    <button data-panel="panels" title="Solar arrays (3)"><svg><use href="#i-panels"/></svg><span>Arrays</span></button>
+    <button data-panel="objects" title="Obstacles (4)"><svg><use href="#i-objects"/></svg><span>Objects</span></button>
+    <button data-panel="models" title="Irradiance models (5)"><svg><use href="#i-models"/></svg><span>Models</span></button>
+    <button data-panel="shading" title="Shading (6)"><svg><use href="#i-shade"/></svg><span>Shading</span></button>
+    <button data-panel="meta" title="Meta-learning (7)"><svg><use href="#i-meta"/></svg><span>Meta</span></button>
+    <span class="rail-gap"></span>
+    <button data-panel="world" title="3D world and keys (8)"><svg><use href="#i-world"/></svg><span>World</span></button>
+  </nav>
+
+  <aside id="drawer" hidden aria-labelledby="drawer-title">
+    <header class="drawer-head">
+      <h2 id="drawer-title">Site</h2>
+      <button class="icon-btn" id="drawer-close" title="Close (Esc)"><svg><use href="#i-close"/></svg></button>
+    </header>
+    <div class="drawer-body">
+
+      <!-- SITE -->
+      <section data-pane="site">
+        <div class="field">
+          <label for="site-search">Find a place</label>
+          <div class="row">
+            <input id="site-search" type="search" placeholder="e.g. Buckingham, MK18" autocomplete="off">
+            <button class="btn" id="site-search-go">Search</button>
+          </div>
+          <p class="hint" id="site-search-note"></p>
+          <ul class="place-results" id="site-results"></ul>
+        </div>
+        <div class="split">
+          <div class="field"><label for="site-lat">Latitude</label><input id="site-lat" type="number" step="0.00001" inputmode="decimal"></div>
+          <div class="field"><label for="site-lon">Longitude</label><input id="site-lon" type="number" step="0.00001" inputmode="decimal"></div>
+        </div>
+        <div class="row">
+          <button class="btn primary" id="site-go">Go to coordinates</button>
+          <button class="btn" id="site-reset">Default site</button>
+        </div>
+        <p class="hint">Moving to a new site clears its arrays and obstacles. Use <b>World → Save scene</b> first if you want to keep them.</p>
+        <dl class="facts" id="site-facts"></dl>
+      </section>
+
+      <!-- WEATHER -->
+      <section data-pane="time">
+        <div class="seg" role="tablist" id="wx-mode">
+          <button data-mode="current" role="tab">Now</button>
+          <button data-mode="forecast" role="tab">Next 7 days</button>
+          <button data-mode="historical" role="tab">Historical</button>
+          <button data-mode="previous" role="tab">Past forecast</button>
+          <button data-mode="csv" role="tab">CSV</button>
+        </div>
+        <p class="hint" id="wx-mode-hint"></p>
+        <div class="wx-opts" data-for="historical previous">
+          <div class="split">
+            <div class="field"><label for="wx-start">Start date</label><input id="wx-start" type="date"></div>
+            <div class="field"><label for="wx-end">End date</label><input id="wx-end" type="date"></div>
+          </div>
+        </div>
+        <div class="wx-opts field" data-for="historical">
+          <label for="wx-hist-src">Source</label>
+          <select id="wx-hist-src">
+            <option value="historical">Archived forecast model (closest to actual)</option>
+            <option value="era5">ERA5 reanalysis</option>
+          </select>
+        </div>
+        <div class="wx-opts field" data-for="previous">
+          <label for="wx-lead">Forecast issued N days before (N)</label>
+          <div class="row"><input id="wx-lead" type="range" min="1" max="7" step="1" value="1"><output id="wx-lead-out" class="mono">1 day</output></div>
+        </div>
+        <div class="wx-opts field" data-for="csv">
+          <label for="wx-csv">Weather CSV</label>
+          <input id="wx-csv" type="file" accept=".csv,text/csv">
+          <p class="hint">Columns: <code>time</code> (UTC), and any of <code>temperature</code>, <code>cloud_cover</code>, <code>wind_speed</code>, <code>wind_direction</code>, <code>precipitation</code>, <code>ghi</code>, <code>dhi</code>, <code>dni</code>. Add <code>measured_kw</code> to score the models.</p>
+        </div>
+        <button class="btn primary wide" id="wx-load">Load weather</button>
+        <div class="status" id="wx-status"></div>
+        <hr>
+        <div class="field">
+          <label for="meas-csv">Measured output (optional)</label>
+          <input id="meas-csv" type="file" accept=".csv,text/csv">
+          <p class="hint">CSV with <code>time</code> and <code>measured_kw</code>. The dashboard then shows RMSE, MAE, R² and Theil’s U2 for each model.</p>
+          <div class="status" id="meas-status"></div>
+        </div>
+        <p class="hint">Weather data by <a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:var(--sky)">Open-Meteo.com</a>, CC BY 4.0. The free API is for non-commercial use.</p>
+      </section>
+
+      <!-- ARRAYS -->
+      <section data-pane="panels">
+        <div class="row">
+          <button class="btn primary" id="arr-place"><svg><use href="#i-plus"/></svg>Place array</button>
+          <span class="hint">then click a roof or the ground</span>
+        </div>
+        <ul class="list" id="arr-list"></ul>
+        <div id="arr-editor" hidden>
+          <div class="ed-head"><input id="arr-name" class="name-input" aria-label="Array name">
+            <div class="ed-actions">
+              <button class="icon-btn" id="arr-drop" title="Drop to surface"><svg><use href="#i-drop"/></svg></button>
+              <button class="icon-btn" id="arr-dup" title="Duplicate"><svg><use href="#i-copy"/></svg></button>
+              <button class="icon-btn danger" id="arr-del" title="Delete (Del)"><svg><use href="#i-trash"/></svg></button>
+            </div>
+          </div>
+          <p class="capacity" id="arr-capacity"></p>
+          <fieldset><legend>Layout</legend>
+            <div class="split3">
+              <div class="field"><label for="arr-rows">Rows</label><input id="arr-rows" type="number" min="1" max="40" step="1"></div>
+              <div class="field"><label for="arr-cols">Panels per row</label><input id="arr-cols" type="number" min="1" max="60" step="1"></div>
+              <div class="field"><label for="arr-pitch">Row pitch (m)</label><input id="arr-pitch" type="number" min="0.5" max="20" step="0.05"></div>
+            </div>
+            <details><summary>Fill an area instead</summary>
+              <div class="split3">
+                <div class="field"><label for="arr-fill-l">Length (m)</label><input id="arr-fill-l" type="number" min="1" step="0.5" value="12"></div>
+                <div class="field"><label for="arr-fill-w">Depth (m)</label><input id="arr-fill-w" type="number" min="1" step="0.5" value="6"></div>
+                <div class="field"><label>&nbsp;</label><button class="btn" id="arr-fill">Fill</button></div>
+              </div>
+            </details>
+            <button class="btn ghost" id="arr-suggest">Set pitch to avoid winter-noon shading</button>
+          </fieldset>
+          <fieldset><legend>Orientation</legend>
+            <div class="field"><label for="arr-tilt">Tilt <output for="arr-tilt" class="mono" id="arr-tilt-out"></output></label><input id="arr-tilt" type="range" min="0" max="90" step="1"></div>
+            <div class="field"><label for="arr-az">Facing azimuth <output class="mono" id="arr-az-out"></output></label><input id="arr-az" type="range" min="0" max="359" step="1"></div>
+            <div class="split">
+              <div class="field"><label for="arr-mount">Mount height (m)</label><input id="arr-mount" type="number" min="0" max="10" step="0.05"></div>
+              <div class="field"><label for="arr-gap">Gap between panels (m)</label><input id="arr-gap" type="number" min="0" max="2" step="0.01"></div>
+            </div>
+          </fieldset>
+          <fieldset><legend>Panel</legend>
+            <div class="split">
+              <div class="field"><label for="arr-pw">Width (m)</label><input id="arr-pw" type="number" min="0.2" max="3" step="0.01"></div>
+              <div class="field"><label for="arr-pl">Length (m)</label><input id="arr-pl" type="number" min="0.2" max="3" step="0.01"></div>
+              <div class="field"><label for="arr-eff">Efficiency (0–1)</label><input id="arr-eff" type="number" min="0.01" max="0.5" step="0.005"></div>
+              <div class="field"><label for="arr-gamma">Temp. coefficient (%/°C)</label><input id="arr-gamma" type="number" min="-1" max="0" step="0.01"></div>
+              <div class="field"><label for="arr-cx">Cells across</label><input id="arr-cx" type="number" min="1" max="24" step="1"></div>
+              <div class="field"><label for="arr-cy">Cells down</label><input id="arr-cy" type="number" min="1" max="24" step="1"></div>
+            </div>
+          </fieldset>
+          <fieldset><legend>Position (m from site centre)</legend>
+            <div class="split3">
+              <div class="field"><label for="arr-x">East</label><input id="arr-x" type="number" step="0.1"></div>
+              <div class="field"><label for="arr-y">North</label><input id="arr-y" type="number" step="0.1"></div>
+              <div class="field"><label for="arr-z">Height</label><input id="arr-z" type="number" step="0.05"></div>
+            </div>
+            <p class="hint">Drag the array in the view, or use the arrow keys (Shift for 1 m steps). Q / E rotate.</p>
+          </fieldset>
+        </div>
+      </section>
+
+      <!-- OBSTACLES -->
+      <section data-pane="objects">
+        <p class="hint">Pick an object, then click where it stands. Buildings and trees inside the 3D tiles are covered under <b>Shading</b>.</p>
+        <div class="lib" id="obj-lib"></div>
+        <ul class="list" id="obj-list"></ul>
+        <div id="obj-editor" hidden>
+          <div class="ed-head"><strong id="obj-title">Object</strong>
+            <div class="ed-actions">
+              <button class="icon-btn" id="obj-drop" title="Drop to surface"><svg><use href="#i-drop"/></svg></button>
+              <button class="icon-btn" id="obj-dup" title="Duplicate"><svg><use href="#i-copy"/></svg></button>
+              <button class="icon-btn danger" id="obj-del" title="Delete (Del)"><svg><use href="#i-trash"/></svg></button>
+            </div>
+          </div>
+          <div class="split3" id="obj-dims"></div>
+          <div class="field"><label for="obj-heading">Rotation <output class="mono" id="obj-heading-out"></output></label><input id="obj-heading" type="range" min="0" max="359" step="1"></div>
+          <div class="field" id="obj-por-wrap"><label for="obj-por">Light through canopy <output class="mono" id="obj-por-out"></output></label><input id="obj-por" type="range" min="0" max="0.9" step="0.05">
+            <p class="hint">0% treats the canopy as solid, as the thesis ray-casting does. Raise it for winter or sparse trees.</p></div>
+          <div class="split3">
+            <div class="field"><label for="obj-x">East</label><input id="obj-x" type="number" step="0.1"></div>
+            <div class="field"><label for="obj-y">North</label><input id="obj-y" type="number" step="0.1"></div>
+            <div class="field"><label for="obj-z">Base height</label><input id="obj-z" type="number" step="0.05"></div>
+          </div>
+          <p class="hint">Drag in the view · arrows move · Q / E rotate · [ ] scale · Del removes.</p>
+        </div>
+      </section>
+
+      <!-- MODELS -->
+      <section data-pane="models">
+        <div class="field">
+          <label>Live model (drives the view and power readout)</label>
+          <div class="radio-list" id="model-live"></div>
+        </div>
+        <div class="field">
+          <label>Compare in the period run</label>
+          <div class="check-list" id="model-compare"></div>
+          <button class="btn" id="model-all">Run all physics models</button>
+        </div>
+        <div class="field">
+          <label>Machine-learning baselines</label>
+          <ul class="locked-list">
+            <li>LSTM</li><li>ANN</li><li>GRU</li><li>Bi-LSTM</li>
+          </ul>
+          <p class="hint">Coming soon. These need the trained model files (ONNX or TF.js) from the thesis runs.</p>
+        </div>
+        <details class="adv"><summary>Model constants</summary>
+          <p class="hint">Edit only with sign-off from the PV Science project. Values marked <span class="badge warn">placeholder</span> are not in the published papers; enter the thesis values.</p>
+          <div id="param-grid"></div>
+          <button class="btn ghost" id="param-reset">Restore defaults</button>
+        </details>
+      </section>
+
+      <!-- SHADING -->
+      <section data-pane="shading">
+        <div class="field">
+          <label class="toggle"><input type="checkbox" id="sh-tiles"><span>Include buildings, terrain and trees from the 3D tiles</span></label>
+          <p class="hint">Traces rays from each panel through the loaded 3D world to build its skyline. Your placed obstacles and other panels are always ray-cast per cell.</p>
+        </div>
+        <div class="split">
+          <div class="field"><label for="sh-step">Azimuth step</label>
+            <select id="sh-step"><option value="5">5° (precise)</option><option value="10" selected>10° (fast)</option></select></div>
+          <div class="field"><label for="sh-scope">Skyline per</label>
+            <select id="sh-scope"><option value="panel">Panel</option><option value="array" selected>Array (5 points)</option></select></div>
+        </div>
+        <button class="btn primary wide" id="sh-run">Trace skyline</button>
+        <div class="progress" id="sh-progress" hidden><span></span></div>
+        <div class="status" id="sh-status"></div>
+        <div class="field">
+          <label>Panel colours</label>
+          <div class="seg small" id="sh-colour"><button data-v="real">Realistic</button><button data-v="map">Direct-sun map</button></div>
+        </div>
+        <figure class="sunpath">
+          <canvas id="sunpath" width="520" height="520" aria-label="Sun path and skyline for the selected array"></canvas>
+          <figcaption><span class="key k-sun"></span>Sun path (selected day) <span class="key k-tile"></span>3D tiles <span class="key k-obj"></span>Obstacles</figcaption>
+        </figure>
+      </section>
+
+      <!-- META -->
+      <section data-pane="meta">
+        <div class="locked-card">
+          <h3>Meta-learning mode</h3>
+          <p>Picks the best base model by comparing past periods with similar dates and times. It needs the trained base models and a run of each over the chosen period.</p>
+          <p class="hint">Available now: the thesis seasonal rule (Models → Seasonal rule) and model scoring against measured output in the dashboard.</p>
+          <button class="btn" disabled>Upload meta-target</button>
+        </div>
+      </section>
+
+      <!-- ADMIN -->
+      <section data-pane="admin">
+        <p class="hint">Publish what you see now as the starting point for everyone who opens this site. It is saved as <code>config.json</code> in your GitHub repository; GitHub Pages serves it to visitors within a few minutes.</p>
+        <fieldset><legend>Repository</legend>
+          <div class="split">
+            <div class="field"><label for="ad-repo">Owner / repository</label><input id="ad-repo" type="text" placeholder="your-name/arien-twin" autocomplete="off" spellcheck="false"></div>
+            <div class="field"><label for="ad-branch">Branch</label><input id="ad-branch" type="text" value="main" autocomplete="off" spellcheck="false"></div>
+          </div>
+          <div class="field"><label for="ad-token">GitHub token (fine-grained)</label><input id="ad-token" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+            <p class="hint">GitHub → Settings → Developer settings → Fine-grained tokens. Give it access to this one repository only, with <b>Contents: Read and write</b>. It is used only to save <code>config.json</code>.</p></div>
+          <label class="toggle"><input type="checkbox" id="ad-remember"><span>Remember the GitHub token on this device</span></label>
+        </fieldset>
+        <fieldset><legend>Publish</legend>
+          <label class="toggle"><input type="checkbox" id="ad-scene" checked><span>Site, arrays, obstacles and model settings</span></label>
+          <label class="toggle"><input type="checkbox" id="ad-keys" checked><span>3D world source and its key</span></label>
+          <p class="hint warnline">Visitors’ browsers can read published keys. Restrict the Cesium token’s Allowed URLs and the Google key’s websites to this site’s address first.</p>
+          <label class="toggle"><input type="checkbox" id="ad-om"><span>Open-Meteo commercial key</span></label>
+          <p class="hint warnline">Not recommended: Open-Meteo keys cannot be limited to one website, so anyone could use your quota.</p>
+          <div class="field"><label for="ad-wx">Weather period visitors start with</label>
+            <select id="ad-wx"><option value="forecast">Next 7 days</option><option value="current">Now (yesterday to tomorrow)</option></select></div>
+          <label class="toggle"><input type="checkbox" id="ad-auto" checked><span>Connect automatically when visitors open the site</span></label>
+        </fieldset>
+        <button class="btn primary wide" id="ad-publish">Publish settings</button>
+        <button class="btn ghost wide" id="ad-download">Download config.json instead</button>
+        <div class="status" id="ad-status"></div>
+        <p class="hint" id="ad-current"></p>
+      </section>
+
+      <!-- WORLD -->
+      <section data-pane="world">
+        <div class="field">
+          <label for="w-src">3D world</label>
+          <select id="w-src">
+            <option value="none">Map only (no key)</option>
+            <option value="ion">Cesium ion: terrain + OSM buildings</option>
+            <option value="google">Google Photorealistic 3D Tiles (Google key)</option>
+            <option value="google-ion">Google Photorealistic via Cesium ion</option>
+          </select>
+        </div>
+        <div class="field" id="w-ion-wrap"><label for="w-ion">Cesium ion access token</label><input id="w-ion" type="password" autocomplete="off" spellcheck="false"></div>
+        <div class="field" id="w-g-wrap"><label for="w-google">Google Maps Platform API key (Map Tiles API enabled)</label><input id="w-google" type="password" autocomplete="off" spellcheck="false"></div>
+        <div class="field"><label for="w-om">Open-Meteo API key (optional, commercial plan)</label><input id="w-om" type="password" autocomplete="off" spellcheck="false" placeholder="Empty = free non-commercial API"></div>
+        <label class="toggle"><input type="checkbox" id="w-remember"><span>Remember keys on this device</span></label>
+        <button class="btn primary wide" id="w-load">Load world</button>
+        <button class="btn ghost wide" id="w-connect">Open the connect screen</button>
+        <button class="btn wide" id="w-admin">Site settings for visitors (admin)</button>
+        <div class="status" id="w-status"></div>
+        <p class="hint">Keys stay in this browser and go only to Cesium or Google. With Google tiles, place-name search is turned off because Google’s terms require their own geocoder; enter coordinates instead.</p>
+        <hr>
+        <div class="field"><label for="w-vis">Weather visuals</label>
+          <select id="w-vis"><option value="high">Volumetric clouds, rain, snow</option><option value="low">Lighter clouds (faster)</option><option value="off">Off</option></select></div>
+        <label class="toggle"><input type="checkbox" id="w-shadows" checked><span>Sun shadows in the view</span></label>
+        <hr>
+        <div class="row">
+          <button class="btn" id="scene-save">Save scene</button>
+          <label class="btn" for="scene-open">Open scene</label><input id="scene-open" type="file" accept=".json,application/json" hidden>
+        </div>
+        <p class="hint">A scene file holds the site, arrays, obstacles and model settings, not your keys.</p>
+      </section>
+    </div>
+  </aside>
+
+  <div id="hud">
+    <div class="hud-power">
+      <span class="eyebrow">Total power</span>
+      <div class="power"><span id="hud-kw">0.00</span><small>kW</small></div>
+      <div class="hud-sub mono" id="hud-sub">—</div>
+    </div>
+    <div class="hud-wx" id="hud-wx">—</div>
+    <div class="hud-btns">
+      <button class="chip" id="btn-visuals" aria-pressed="true" title="Weather visuals (V)"><svg><use href="#i-eye"/></svg>Visuals</button>
+      <button class="chip" id="btn-dash" aria-pressed="false" title="Dashboard (D)"><svg><use href="#i-chart"/></svg>Dashboard</button>
+    </div>
+  </div>
+
+  <aside id="dash" hidden aria-label="Dashboard">
+    <header class="drawer-head"><h2>Dashboard</h2><button class="icon-btn" id="dash-close" title="Close (D)"><svg><use href="#i-close"/></svg></button></header>
+    <div class="drawer-body">
+      <div class="reco" id="reco">Run the period to get a recommendation.</div>
+      <h3 class="sub">Weather now</h3>
+      <dl class="overview" id="overview"></dl>
+      <h3 class="sub">Power over the period</h3>
+      <div class="chart-wrap"><canvas id="chart"></canvas></div>
+      <div class="table-wrap"><table class="results" id="results-table"></table></div>
+      <div class="row">
+        <button class="btn" id="export-csv">Export results CSV</button>
+      </div>
+      <p class="hint" id="dash-note"></p>
+      <p class="hint">Weather: Open-Meteo.com (CC BY 4.0), radiation disaggregated from hourly means. Physics constants marked “check” need thesis values.</p>
+    </div>
+  </aside>
+
+  <footer id="timebar">
+    <div class="tb-controls">
+      <button class="icon-btn" id="t-start" title="Jump to start"><svg><use href="#i-start"/></svg></button>
+      <button class="icon-btn" id="t-back" title="Back 1 hour"><svg><use href="#i-back"/></svg></button>
+      <button class="icon-btn play" id="t-play" title="Play / pause (Space)"><svg><use href="#i-play"/></svg></button>
+      <button class="icon-btn" id="t-fwd" title="Forward 1 hour"><svg><use href="#i-fwd"/></svg></button>
+      <select id="t-speed" aria-label="Simulation speed">
+        <option value="1">Real time</option>
+        <option value="60">1 min / s</option>
+        <option value="600">10 min / s</option>
+        <option value="3600" selected>1 h / s</option>
+        <option value="21600">6 h / s</option>
+        <option value="86400">1 day / s</option>
+      </select>
+    </div>
+    <div class="tb-scrub">
+      <input id="t-scrub" type="range" min="0" max="1" step="60000" value="0" aria-label="Simulation time">
+      <div class="tb-days" id="t-days"></div>
+    </div>
+    <div class="tb-clock mono" id="t-clock">—</div>
+    <button class="btn primary run" id="t-run" title="Compute the whole period at 15-minute steps"><svg><use href="#i-run"/></svg><span class="run-label">Fast-forward period</span></button>
+  </footer>
+
+  <div id="modebar" hidden><span id="modebar-text"></span> <kbd>Esc</kbd> to cancel</div>
+  <div id="toasts" aria-live="polite"></div>
+  <div id="boot">
+    <div class="setup" id="setup" role="dialog" aria-labelledby="setup-title">
+      <header class="setup-head">
+        <strong id="setup-title">ARIEN Twin Studio</strong>
+        <span>Connect the 3D world, then the weather. Keys stay in this browser and are sent only to the service they belong to.</span>
+      </header>
+      <p class="setup-note" id="setup-note" hidden></p>
+      <ol class="steps">
+        <li class="step" id="step-world" data-state="active">
+          <div class="step-head"><span class="num">1</span><h3>3D world</h3><button class="step-done" id="sw-done" type="button" hidden>Loaded</button></div>
+          <div class="step-body">
+            <div class="field"><label for="s-src">Source</label>
+              <select id="s-src">
+                <option value="ion">Cesium ion: terrain + OSM buildings</option>
+                <option value="google">Google Photorealistic 3D Tiles (Google key)</option>
+                <option value="google-ion">Google Photorealistic via Cesium ion</option>
+                <option value="none">Map only (no key)</option>
+              </select></div>
+            <div class="field" id="s-ion-wrap"><label for="s-ion">Cesium ion access token</label>
+              <input id="s-ion" type="password" autocomplete="off" spellcheck="false" placeholder="eyJhbGciOi…">
+              <p class="hint">cesium.com/ion → Access Tokens. A token with the default <code>assets:read</code> scope is enough.</p></div>
+            <div class="field" id="s-g-wrap"><label for="s-google">Google Maps Platform API key</label>
+              <input id="s-google" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+              <p class="hint">Enable the Map Tiles API on the key. Restrict it to that API and to the address you open this page from.</p></div>
+            <label class="toggle"><input type="checkbox" id="s-remember"><span>Remember keys on this device</span></label>
+            <button class="btn primary wide" id="s-world">Load 3D world</button>
+            <div class="status" id="s-world-msg"></div>
+          </div>
+        </li>
+        <li class="step" id="step-wx" data-state="locked">
+          <div class="step-head"><span class="num">2</span><h3>Weather</h3><span class="step-done" id="sx-done" hidden>Loaded</span></div>
+          <div class="step-body">
+            <div class="field"><label for="s-wx-mode">Period</label>
+              <select id="s-wx-mode"><option value="forecast">Next 7 days (forecast)</option><option value="current">Now (yesterday to tomorrow)</option></select></div>
+            <div class="field"><label for="s-om">Open-Meteo API key (optional)</label>
+              <input id="s-om" type="password" autocomplete="off" spellcheck="false" placeholder="Leave empty for the free API">
+              <p class="hint">The free API needs no key but is for non-commercial use. A commercial plan key switches requests to Open-Meteo’s customer servers.</p></div>
+            <div class="row"><button class="btn primary" id="s-wx" disabled>Load weather</button><button class="btn ghost" id="s-skip" disabled>Skip for now</button></div>
+            <div class="status" id="s-wx-msg"></div>
+          </div>
+        </li>
+      </ol>
+      <p class="hint setup-foot">Historical periods, past forecasts and CSV files are in the Weather panel once you are in.</p>
+    </div>
+    <div class="boot-msg"><span id="boot-msg"></span></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.146.0/Build/Cesium/Cesium.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/exporters/GLTFExporter.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script>/*@@PHYSICS@@*/</script>
+<script>/*@@WEATHER@@*/</script>
+<script>/*@@APP@@*/</script>
+</body>
+</html>
