@@ -157,5 +157,16 @@ const pc = W.parseCsv(csv, lat, lon);
 ok(pc.series && pc.series.time.length === 2 && pc.measured.kw[1] === 2.6, 'CSV with measured column');
 ok(W.describe(61, 90) === 'Light rain' && W.describe(1, 10) === 'Clear sky', 'weather descriptions');
 
-console.log(`${passes} passed, ${fails} failed`);
-process.exit(fails ? 1 : 0);
+// Open-Meteo busy (503): retries then succeeds; keeps failing → clear message
+(async () => {
+  const okBody = JSON.stringify(fake);
+  let calls = 0;
+  const flaky = async () => { calls++; return calls < 3 ? { status: 503, ok: false, json: async () => ({ error: true, reason: 'The service is overloaded' }) } : { status: 200, ok: true, json: async () => JSON.parse(okBody) }; };
+  const s1 = await W.fetchSeries({ mode: 'forecast', lat, lon, retryDelays: [1, 1, 1] }, flaky);
+  ok(calls === 3 && s1.time.length === 48, 'retries a busy Open-Meteo and then loads');
+  const busy = async () => ({ status: 503, ok: false, json: async () => ({ error: true, reason: 'The service is overloaded' }) });
+  let msg = ''; try { await W.fetchSeries({ mode: 'forecast', lat, lon, retryDelays: [1, 1] }, busy); } catch (e) { msg = e.message; }
+  ok(/busy right now \(HTTP 503: The service is overloaded\)/.test(msg), 'busy message: ' + msg.slice(0, 60));
+  console.log(`${passes} passed, ${fails} failed`);
+  process.exit(fails ? 1 : 0);
+  })();

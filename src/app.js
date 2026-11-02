@@ -793,7 +793,8 @@
         if (!parsed.series) throw new Error('No weather columns found. Include at least temperature, cloud_cover or ghi.');
         series = parsed.series; if (parsed.measured) { state.wx.measured = parsed.measured; setStatus('#meas-status', `${parsed.measured.time.length} measured values from the weather CSV.`, 'ok'); }
       } else {
-        const opts = { mode, lat: state.site.lat, lon: state.site.lon, apiKey: state.wx.apiKey || '' };
+        const opts = { mode, lat: state.site.lat, lon: state.site.lon, apiKey: state.wx.apiKey || '',
+          onRetry: (n, max, code) => { const m = `Open-Meteo is busy (HTTP ${code}). Retrying (${n} of ${max})…`; setStatus('#wx-status', m); if (!$('#boot').classList.contains('gone')) setStatus('#s-wx-msg', m); } };
         if (mode === 'historical' || mode === 'previous') {
           if (mode === 'historical') opts.mode = $('#wx-hist-src').value;
           opts.start = $('#wx-start').value; opts.end = $('#wx-end').value;

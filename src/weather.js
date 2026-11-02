@@ -208,11 +208,24 @@
     if (cloudPct < 15) return 'Clear sky'; if (cloudPct < 40) return 'Mainly clear'; if (cloudPct < 75) return 'Partly cloudy'; return 'Overcast';
   }
 
+  const BUSY = [429, 502, 503, 504];
   async function fetchSeries(opts, fetchImpl) {
     const f = fetchImpl || fetch;
     const url = buildUrl(opts);
-    const res = await f(url);
-    let json; try { json = await res.json(); } catch (e) { throw new Error(`Weather service returned an unreadable response (HTTP ${res.status}).`); }
+    const delays = opts.retryDelays || [2000, 6000, 15000];
+    let res, json;
+    for (let attempt = 0; ; attempt++) {
+      res = await f(url);
+      try { json = await res.json(); } catch (e) { json = null; }
+      if (!BUSY.includes(res.status) || attempt >= delays.length) break;
+      if (opts.onRetry) opts.onRetry(attempt + 1, delays.length, res.status);
+      await new Promise(r => setTimeout(r, delays[attempt]));
+    }
+    if (BUSY.includes(res.status)) {
+      const why = json && json.reason ? `: ${json.reason}` : '';
+      throw new Error(`Open-Meteo is busy right now (HTTP ${res.status}${why}). This is on their side and usually passes within minutes. Try again shortly, use a commercial key, or load a CSV from the Weather panel.`);
+    }
+    if (!json) throw new Error(`Weather service returned an unreadable response (HTTP ${res.status}).`);
     if (!res.ok || json.error) throw new Error(json.reason || `Weather service error (HTTP ${res.status}).`);
     const s = parseOpenMeteo(json, opts);
     if (!s.time.length) throw new Error('No hourly data for that period. Previous-run forecasts start in January 2024; historical forecasts in 2022.');
