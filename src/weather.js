@@ -4,12 +4,17 @@
   'use strict';
   const PH = (typeof module !== 'undefined' && module.exports) ? require('./physics.js') : root.ArienPhysics;
 
-  const BASE_VARS = ['temperature_2m', 'relative_humidity_2m', 'cloud_cover', 'precipitation', 'rain', 'snowfall',
-    'weather_code', 'wind_speed_10m', 'wind_direction_10m',
-    'shortwave_radiation', 'direct_radiation', 'diffuse_radiation', 'direct_normal_irradiance'];
-  // Previous Runs API lead-time variants (no humidity needed)
-  const PREV_VARS = ['temperature_2m', 'cloud_cover', 'precipitation', 'rain', 'snowfall', 'weather_code',
-    'wind_speed_10m', 'wind_direction_10m', 'shortwave_radiation', 'direct_radiation', 'diffuse_radiation', 'direct_normal_irradiance'];
+  // Only what the thesis models and the UE "Response overview" use:
+  //  temperature + wind speed → panel thermal model; cloud cover → Kasten, Bálint, Karamov–Naumov;
+  //  GHI (shortwave) → Real-World GHI and HDKR; diffuse → HDKR beam/diffuse split;
+  //  weather code → weather description (and rain/snow visuals); wind direction → overview.
+  // Seven variables keep each request at the weight of a single Open-Meteo call.
+  const BASE_VARS = ['temperature_2m', 'cloud_cover', 'wind_speed_10m', 'wind_direction_10m', 'weather_code',
+    'shortwave_radiation', 'diffuse_radiation'];
+  const PREV_VARS = BASE_VARS;
+  /** Precipitation rate (mm/h) and snow estimated from the WMO weather code, used only for visuals */
+  const CODE_PRECIP = { 51: 0.2, 53: 0.5, 55: 1, 56: 0.3, 57: 0.8, 61: 0.8, 63: 2.5, 65: 6, 66: 1, 67: 3, 80: 1.5, 81: 4, 82: 10, 95: 5, 96: 8, 99: 12 };
+  const CODE_SNOW = { 71: 0.5, 73: 1.5, 75: 3, 77: 0.3, 85: 1, 86: 3 };
 
   const MODES = {
     current: { label: 'Now (live)', host: 'https://api.open-meteo.com/v1/forecast' },
@@ -50,11 +55,14 @@
       mode: opts.mode, lat: json.latitude, lon: json.longitude, elevation: json.elevation,
       utcOffset: json.utc_offset_seconds || 0, tz: json.timezone_abbreviation || json.timezone || 'UTC',
       time,
-      temp: get('temperature_2m'), cloud: get('cloud_cover'), precip: get('precipitation'), rain: get('rain'), snow: get('snowfall'),
+      temp: get('temperature_2m'), cloud: get('cloud_cover'), precip: get('precipitation'), rain: null, snow: get('snowfall'),
       code: get('weather_code'), wind: get('wind_speed_10m'), windDir: get('wind_direction_10m'),
-      ghi: get('shortwave_radiation'), bhi: get('direct_radiation'), dhi: get('diffuse_radiation'), dni: get('direct_normal_irradiance'),
-      hum: get('relative_humidity_2m'), radiationAveraging: 'backward-hour'
+      ghi: get('shortwave_radiation'), bhi: get('direct_radiation'), dhi: get('diffuse_radiation'), dni: null,
+      radiationAveraging: 'backward-hour'
     };
+    const code = s.code || [];
+    if (!s.precip) { s.precip = code.map(c => CODE_PRECIP[c] || 0); s.precipFromCode = true; }
+    if (!s.snow) s.snow = code.map(c => CODE_SNOW[c] || 0);
     return finalise(s);
   }
 
@@ -208,29 +216,81 @@
     if (cloudPct < 15) return 'Clear sky'; if (cloudPct < 40) return 'Mainly clear'; if (cloudPct < 75) return 'Partly cloudy'; return 'Overcast';
   }
 
-  const BUSY = [429, 502, 503, 504];
+  const BUSY = [429, 500, 502, 503, 504];
+  const CACHE_FILES = { current: 'forecast.json', forecast: 'forecast.json', historical: 'historical.json', era5: 'historical.json', previous: 'previous.json' };
+  const DAY = 86400000;
+
+  /** Keep only the hours between start and end dates (inclusive) of an Open-Meteo hourly block */
+  function sliceHourly(json, startMs, endMs) {
+    const h = json.hourly || {}, t = h.time || [];
+    const keep = t.map((x, i) => (x * 1000 >= startMs && x * 1000 < endMs) ? i : -1).filter(i => i >= 0);
+    const out = {};
+    for (const [k, arr] of Object.entries(h)) out[k] = Array.isArray(arr) ? keep.map(i => arr[i]) : arr;
+    return { ...json, hourly: out };
+  }
+  /** Try the GitHub-hosted cache. Returns a series or null (and the reason) */
+  async function fromCache(opts, f, maxAgeMs) {
+    const file = CACHE_FILES[opts.mode];
+    if (!opts.cacheBase || !file) return { series: null, why: 'no cache for this mode' };
+    if (opts.mode === 'previous' && (opts.leadDays | 0) > 4) return { series: null, why: 'the cache keeps lead times of 1 to 4 days' };
+    if (opts.apiKey) return { series: null, why: 'commercial key in use' };
+    let res, json;
+    try { res = await f(opts.cacheBase + file + '?t=' + Math.floor(Date.now() / 300000), { cache: 'no-store' }); json = await res.json(); }
+    catch (e) { return { series: null, why: 'cache unreachable' }; }
+    if (!res.ok || !json || !json.hourly) return { series: null, why: 'cache not built yet' };
+    if (Math.abs(json.latitude - opts.lat) > 0.06 || Math.abs(json.longitude - opts.lon) > 0.06) return { series: null, why: 'cache is for another site' };
+    const age = Date.now() - Date.parse(json.arien_cached_at || 0);
+    if (maxAgeMs != null && !(age <= maxAgeMs)) return { series: null, why: 'cache is older than allowed' };
+    let data = json;
+    if (opts.start && opts.end && (opts.mode === 'historical' || opts.mode === 'era5' || opts.mode === 'previous')) {
+      const s0 = Date.parse(opts.start + 'T00:00:00Z'), s1 = Date.parse(opts.end + 'T00:00:00Z') + DAY;
+      const t = (json.hourly.time || []).map(x => x * 1000);
+      if (!t.length || s0 < t[0] - DAY || s1 > t[t.length - 1] + 2 * 3600000) return { series: null, why: 'dates are outside the cached window' };
+      data = sliceHourly(json, s0 - (json.utc_offset_seconds || 0) * 1000, s1 - (json.utc_offset_seconds || 0) * 1000);
+    }
+    const series = parseOpenMeteo(data, opts.mode === 'era5' ? { ...opts, mode: 'historical' } : opts);
+    if (!series.time.length) return { series: null, why: 'no cached hours for these dates' };
+    series.cachedAt = json.arien_cached_at; series.fromCache = true;
+    return { series, why: '' };
+  }
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  /**
+   * Weather for a mode. Order: fresh GitHub cache → live Open-Meteo (retries with jitter, avoiding the
+   * full-hour peak when the free API sheds load) → the GitHub cache however old.
+   */
   async function fetchSeries(opts, fetchImpl) {
     const f = fetchImpl || fetch;
+    const maxFresh = opts.mode === 'current' || opts.mode === 'forecast' ? 3 * 3600000 : 30 * 3600000;
+    const cached = await fromCache(opts, f, maxFresh);
+    if (cached.series) return cached.series;
     const url = buildUrl(opts);
-    const delays = opts.retryDelays || [2000, 6000, 15000];
-    let res, json;
+    const delays = opts.retryDelays || [2500, 7000];
+    let res, json, netErr = null;
     for (let attempt = 0; ; attempt++) {
-      res = await f(url);
-      try { json = await res.json(); } catch (e) { json = null; }
-      if (!BUSY.includes(res.status) || attempt >= delays.length) break;
-      if (opts.onRetry) opts.onRetry(attempt + 1, delays.length, res.status);
-      await new Promise(r => setTimeout(r, delays[attempt]));
+      try { res = await f(url); try { json = await res.json(); } catch (e) { json = null; } netErr = null; }
+      catch (e) { netErr = e; res = null; json = null; }
+      const busy = netErr || (res && BUSY.includes(res.status));
+      if (!busy || attempt >= delays.length) break;
+      if (opts.onRetry) opts.onRetry(attempt + 1, delays.length, res ? res.status : 'network');
+      await sleep(delays[attempt] * (0.75 + Math.random() * 0.5));
     }
-    if (BUSY.includes(res.status)) {
+    if (res && res.ok && json && !json.error) {
+      const s = parseOpenMeteo(json, opts);
+      if (!s.time.length) throw new Error('No hourly data for that period. Previous-run forecasts start in January 2024; historical forecasts in 2022.');
+      s.url = url; return s;
+    }
+    // live failed: any cached copy is better than nothing
+    const stale = await fromCache(opts, f, null);
+    if (stale.series) { stale.series.staleCache = true; return stale.series; }
+    if (netErr) throw netErr;
+    if (res && BUSY.includes(res.status)) {
       const why = json && json.reason ? `: ${json.reason}` : '';
-      throw new Error(`Open-Meteo is busy right now (HTTP ${res.status}${why}). This is on their side and usually passes within minutes. Try again shortly, use a commercial key, or load a CSV from the Weather panel.`);
+      const cacheNote = opts.cacheBase ? ` The site’s weather cache could not stand in (${stale.why}).` : '';
+      throw new Error(`Open-Meteo is busy right now (HTTP ${res.status}${why}). Its free service drops requests at peak times, mostly around the full hour.${cacheNote} Try again in a few minutes, or load a CSV.`);
     }
-    if (!json) throw new Error(`Weather service returned an unreadable response (HTTP ${res.status}).`);
-    if (!res.ok || json.error) throw new Error(json.reason || `Weather service error (HTTP ${res.status}).`);
-    const s = parseOpenMeteo(json, opts);
-    if (!s.time.length) throw new Error('No hourly data for that period. Previous-run forecasts start in January 2024; historical forecasts in 2022.');
-    s.url = url;
-    return s;
+    if (!json) throw new Error(`Weather service returned an unreadable response (HTTP ${res ? res.status : '?'}).`);
+    throw new Error(json.reason || `Weather service error (HTTP ${res.status}).`);
   }
   async function geocode(name, fetchImpl) {
     const f = fetchImpl || fetch;
@@ -239,7 +299,7 @@
     return (j.results || []).map(r => ({ name: r.name, admin: [r.admin1, r.country].filter(Boolean).join(', '), lat: r.latitude, lon: r.longitude }));
   }
 
-  const api = { MODES, buildUrl, parseOpenMeteo, finalise, sample, lerpAt, parseCsv, describe, fetchSeries, geocode, WMO };
+  const api = { MODES, BASE_VARS, CACHE_FILES, buildUrl, parseOpenMeteo, finalise, sample, lerpAt, parseCsv, describe, fetchSeries, fromCache, sliceHourly, geocode, WMO };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ArienWeather = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -794,6 +794,7 @@
         series = parsed.series; if (parsed.measured) { state.wx.measured = parsed.measured; setStatus('#meas-status', `${parsed.measured.time.length} measured values from the weather CSV.`, 'ok'); }
       } else {
         const opts = { mode, lat: state.site.lat, lon: state.site.lon, apiKey: state.wx.apiKey || '',
+          cacheBase: weatherCacheBase(),
           onRetry: (n, max, code) => { const m = `Open-Meteo is busy (HTTP ${code}). Retrying (${n} of ${max})…`; setStatus('#wx-status', m); if (!$('#boot').classList.contains('gone')) setStatus('#s-wx-msg', m); } };
         if (mode === 'historical' || mode === 'previous') {
           if (mode === 'historical') opts.mode = $('#wx-hist-src').value;
@@ -812,13 +813,14 @@
       configureClock(mode === 'current' || mode === 'forecast');
       const hours = series.time.length;
       const warn = !series.hasRadiation ? ' No radiation columns: HDKR and Real-World GHI will read zero.' : '';
-      setStatus('#wx-status', `${series.source}: ${hours} hours, ${fmtDay(series.start)} – ${fmtDay(series.end)} (${series.tz}).${warn}`, warn ? 'err' : 'ok');
+      const cacheNote = series.fromCache ? ` From the site’s weather cache, fetched ${fmtTime(Date.parse(series.cachedAt))}${series.staleCache ? ' (Open-Meteo was busy, so this copy may be out of date)' : ''}.` : '';
+      setStatus('#wx-status', `${series.source}: ${hours} hours, ${fmtDay(series.start)} – ${fmtDay(series.end)} (${series.tz}).${cacheNote}${warn}`, warn || series.staleCache ? 'err' : 'ok');
       renderSiteFacts(); renderDays();
       simulateNow(true);
       if (!auto) toast('Weather loaded. Press play, or fast-forward the whole period.', 'ok');
       state.wx.connected = true;
       await runPeriod(true);
-      return { ok: true, msg: `${series.source}: ${hours} hours loaded.` };
+      return { ok: true, msg: `${series.source}: ${hours} hours loaded${series.fromCache ? ' from the site’s weather cache' : ''}.` };
     } catch (e) {
       const raw = (e && e.message) || String(e);
       const net = /fetch|network|Failed|Load failed/i.test(raw);
@@ -1102,7 +1104,7 @@ void main() {
       ['Weather', WX.describe(w.code, w.cloudPct)], ['Date / time', `${fmtTime(w.t)} ${tzLabel()}`],
       ['Temperature', `${fmt(w.temp + 273.15, 1)} K (${fmt(w.temp, 1)} °C)`], ['Wind speed', `${fmt(w.wind, 1)} m/s`],
       ['Wind direction', `${fmt(w.windDir, 0)}° ${compass(w.windDir)}`], ['Cloud cover', `${fmt(w.cloudPct, 0)} %`],
-      ['Precipitation', `${fmt(w.precip, 1)} mm/h`], ['Sun elevation', `${fmt(w.sun.alt * R2D, 1)}°`],
+      [state.wx.series && state.wx.series.precipFromCode ? 'Precipitation (from weather code)' : 'Precipitation', `${fmt(w.precip, 1)} mm/h`], ['Sun elevation', `${fmt(w.sun.alt * R2D, 1)}°`],
       ['GHI (weather API)', `${fmt(w.api.ghi, 0)} W/m²`]
     ];
     $('#overview').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
@@ -1743,6 +1745,13 @@ void main() {
       if (c.world.googleKey) state.world.google = c.world.googleKey;
     }
     if (c.weather) { if (c.weather.mode) state.wx.mode = c.weather.mode; if (c.weather.openMeteoKey) state.wx.apiKey = c.weather.openMeteoKey; }
+  }
+  /** Raw URL of the weather-data branch written by the GitHub Actions job (see .github/workflows/weather-cache.yml) */
+  function weatherCacheBase() {
+    if (siteConfig && siteConfig.weatherCache === false) return '';
+    if (siteConfig && typeof siteConfig.weatherCache === 'string') return siteConfig.weatherCache;
+    const repo = adminRepoGuess();
+    return repo ? `https://raw.githubusercontent.com/${repo}/weather-data/` : '';
   }
   function adminRepoGuess() {
     const m = location.hostname.match(/^([a-z0-9-]+)\.github\.io$/i);

@@ -167,6 +167,28 @@ ok(W.describe(61, 90) === 'Light rain' && W.describe(1, 10) === 'Clear sky', 'we
   const busy = async () => ({ status: 503, ok: false, json: async () => ({ error: true, reason: 'The service is overloaded' }) });
   let msg = ''; try { await W.fetchSeries({ mode: 'forecast', lat, lon, retryDelays: [1, 1] }, busy); } catch (e) { msg = e.message; }
   ok(/busy right now \(HTTP 503: The service is overloaded\)/.test(msg), 'busy message: ' + msg.slice(0, 60));
+  // precipitation estimated from the weather code when not requested
+  const codeJson = JSON.parse(okBody); codeJson.hourly.weather_code = codeJson.hourly.weather_code.map((c, i) => i === 10 ? 63 : 1);
+  delete codeJson.hourly.precipitation;
+  const sc = W.parseOpenMeteo(codeJson, { mode: 'forecast' });
+  ok(sc.precipFromCode && sc.precip[10] === 2.5 && sc.precip[11] === 0, 'rain rate from weather code 63');
+  ok(W.BASE_VARS.length === 7 && !W.buildUrl({ mode: 'forecast', lat, lon }).includes('precipitation'), 'only the 7 thesis variables are requested');
+  // cache: fresh cache wins without touching Open-Meteo; live busy → stale cache stands in
+  const cacheJson = JSON.parse(okBody); cacheJson.arien_cached_at = new Date().toISOString();
+  const routed = (live, cacheBody) => async (u) => u.startsWith('https://cache.test/') ? (cacheBody ? { status: 200, ok: true, json: async () => cacheBody } : { status: 404, ok: false, json: async () => ({}) }) : live(u);
+  let liveCalls = 0; const liveBusy = async () => { liveCalls++; return { status: 503, ok: false, json: async () => ({ error: true, reason: 'The service is overloaded' }) }; };
+  const c1 = await W.fetchSeries({ mode: 'forecast', lat, lon, cacheBase: 'https://cache.test/', retryDelays: [1] }, routed(liveBusy, cacheJson));
+  ok(c1.fromCache && liveCalls === 0, 'fresh cache used first, Open-Meteo not called');
+  const old = { ...cacheJson, arien_cached_at: new Date(Date.now() - 10 * 3600e3).toISOString() };
+  const c2 = await W.fetchSeries({ mode: 'forecast', lat, lon, cacheBase: 'https://cache.test/', retryDelays: [1] }, routed(liveBusy, old));
+  ok(c2.fromCache && c2.staleCache && liveCalls === 2, 'stale cache stands in when Open-Meteo is busy');
+  const far = { ...cacheJson, latitude: 40 };
+  let farMsg = ''; try { await W.fetchSeries({ mode: 'forecast', lat, lon, cacheBase: 'https://cache.test/', retryDelays: [1] }, routed(liveBusy, far)); } catch (e) { farMsg = e.message; }
+  ok(/another site/.test(farMsg), 'cache for another site is not used: ' + farMsg.slice(-80));
+  // historical slice from cache
+  const hist = { ...cacheJson, utc_offset_seconds: 0 };
+  const c3 = await W.fetchSeries({ mode: 'historical', lat, lon, start: '2024-06-22', end: '2024-06-22', cacheBase: 'https://cache.test/' }, routed(liveBusy, hist));
+  ok(c3.fromCache && c3.time.length === 24, 'historical dates sliced from cache: ' + c3.time.length);
   console.log(`${passes} passed, ${fails} failed`);
   process.exit(fails ? 1 : 0);
   })();
