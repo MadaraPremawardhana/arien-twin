@@ -17,6 +17,7 @@ def png(r, g, b, size=256):
     def chunk(t, d): return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
     return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', size, size, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b'')
 TILE = png(178, 196, 160)
+SAT = png(92, 104, 86)
 
 def sun_alt(t, lat, lon):
     d = datetime.fromtimestamp(t, timezone.utc); n = d.timetuple().tm_yday
@@ -74,6 +75,18 @@ def handle(route):
         pkg, rel = path.split('/', 1)
         name = pkg.rsplit('@', 1)[0]
         return serve_dep(route, name, rel)
+    if u.netloc == 'cdnjs.cloudflare.com' and '/leaflet/' in u.path:
+        return serve_dep(route, 'leaflet', 'dist/' + u.path.rsplit('/', 1)[1].replace('.min.', '.'))
+    if u.netloc == 'server.arcgisonline.com':
+        return route.fulfill(status=200, body=SAT, headers={'content-type': 'image/png', 'access-control-allow-origin': '*'})
+    if u.netloc == 'api.postcodes.io':
+        body = {'status': 200, 'result': {'postcode': 'MK18 1EG', 'latitude': 51.9989, 'longitude': -0.9872, 'admin_district': 'Buckinghamshire', 'parish': 'Buckingham', 'country': 'England'}}
+        return route.fulfill(status=200, body=json.dumps(body), headers={'content-type': 'application/json', 'access-control-allow-origin': '*'})
+    if u.netloc == 'nominatim.openstreetmap.org':
+        q = up.parse_qs(u.query).get('q', [''])[0].lower()
+        res = [{'lat': '51.5072', 'lon': '-0.1276', 'display_name': 'London, Greater London, England, United Kingdom', 'address': {'city': 'London'}}] if 'london' in q else \
+              [{'lat': '51.9989', 'lon': '-0.9872', 'display_name': 'Buckingham, Buckinghamshire, England, United Kingdom', 'address': {'town': 'Buckingham'}}]
+        return route.fulfill(status=200, body=json.dumps(res), headers={'content-type': 'application/json', 'access-control-allow-origin': '*'})
     if u.netloc == 'tile.openstreetmap.org':
         return route.fulfill(status=200, body=TILE, headers={'content-type': 'image/png', 'access-control-allow-origin': '*'})
     if 'open-meteo.com' in u.netloc:

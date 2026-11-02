@@ -7,6 +7,7 @@ Writes (each the raw Open-Meteo JSON plus "arien_cached_at"):
   forecast.json    yesterday, today and the next 7 days        (every run)
   historical.json  archived forecasts for the last 92 days      (every 6 hours, or when missing)
   previous.json    forecasts issued 1-4 days ahead, last 45 days (every 6 hours, or when missing)
+  year.json        ERA5 reanalysis for the 365 days ending 6 days ago, for yield estimates (daily, or when missing)
 A file that cannot be fetched keeps its previous copy.
 """
 import json
@@ -89,6 +90,12 @@ def main():
         hourly = ",".join(f"{v}_previous_day{n}" for n in LEADS for v in VARS)
         jobs.append(("previous.json", "https://previous-runs-api.open-meteo.com/v1/forecast",
                      {**common(s), "hourly": hourly, "start_date": str(end - timedelta(days=44)), "end_date": str(end)}))
+
+    if (now.hour == 1 and os.environ.get("GITHUB_EVENT_NAME") == "schedule") or os.environ.get("GITHUB_EVENT_NAME") != "schedule" \
+            or not (out / "year.json").exists():
+        y_end = (now - timedelta(days=6)).date()
+        jobs.append(("year.json", "https://archive-api.open-meteo.com/v1/archive",
+                     {**common(s), "hourly": ",".join(VARS), "start_date": str(y_end - timedelta(days=364)), "end_date": str(y_end)}))
 
     for name, host, params in jobs:
         print(f"Fetching {name}", flush=True)

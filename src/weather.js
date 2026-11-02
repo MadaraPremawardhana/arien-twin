@@ -21,8 +21,14 @@
     forecast: { label: 'Forecast, next 7 days', host: 'https://api.open-meteo.com/v1/forecast' },
     historical: { label: 'Historical weather', host: 'https://historical-forecast-api.open-meteo.com/v1/forecast' },
     era5: { label: 'Historical (ERA5 reanalysis)', host: 'https://archive-api.open-meteo.com/v1/archive' },
-    previous: { label: 'Historical forecast, N days ahead', host: 'https://previous-runs-api.open-meteo.com/v1/forecast' }
+    previous: { label: 'Historical forecast, N days ahead', host: 'https://previous-runs-api.open-meteo.com/v1/forecast' },
+    year: { label: 'ERA5 reanalysis weather, last 12 months', host: 'https://archive-api.open-meteo.com/v1/archive' }
   };
+  /** The 365 days used for yield estimates: ERA5 is published about 5 days behind, so end 6 days ago */
+  function yearWindow(now = Date.now()) {
+    const end = new Date(now - 6 * 86400000), start = new Date(end.getTime() - 364 * 86400000);
+    return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+  }
 
   function q(params) { return Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&'); }
 
@@ -217,7 +223,7 @@
   }
 
   const BUSY = [429, 500, 502, 503, 504];
-  const CACHE_FILES = { current: 'forecast.json', forecast: 'forecast.json', historical: 'historical.json', era5: 'historical.json', previous: 'previous.json' };
+  const CACHE_FILES = { current: 'forecast.json', forecast: 'forecast.json', historical: 'historical.json', era5: 'historical.json', previous: 'previous.json', year: 'year.json' };
   const DAY = 86400000;
 
   /** Keep only the hours between start and end dates (inclusive) of an Open-Meteo hourly block */
@@ -242,7 +248,10 @@
     const age = Date.now() - Date.parse(json.arien_cached_at || 0);
     if (maxAgeMs != null && !(age <= maxAgeMs)) return { series: null, why: 'cache is older than allowed' };
     let data = json;
-    if (opts.start && opts.end && (opts.mode === 'historical' || opts.mode === 'era5' || opts.mode === 'previous')) {
+    if (opts.mode === 'year') {
+      // any recent 12-month copy will do for a yield estimate; the exact end day does not matter
+      if (!json.hourly.time || json.hourly.time.length < 300 * 24) return { series: null, why: 'cached year is incomplete' };
+    } else if (opts.start && opts.end && (opts.mode === 'historical' || opts.mode === 'era5' || opts.mode === 'previous')) {
       const s0 = Date.parse(opts.start + 'T00:00:00Z'), s1 = Date.parse(opts.end + 'T00:00:00Z') + DAY;
       const t = (json.hourly.time || []).map(x => x * 1000);
       if (!t.length || s0 < t[0] - DAY || s1 > t[t.length - 1] + 2 * 3600000) return { series: null, why: 'dates are outside the cached window' };
@@ -261,7 +270,8 @@
    */
   async function fetchSeries(opts, fetchImpl) {
     const f = fetchImpl || fetch;
-    const maxFresh = opts.mode === 'current' || opts.mode === 'forecast' ? 3 * 3600000 : 30 * 3600000;
+    const maxFresh = opts.mode === 'current' || opts.mode === 'forecast' ? 3 * 3600000 : opts.mode === 'year' ? 8 * 86400000 : 30 * 3600000;
+    if (opts.mode === 'year' && !(opts.start && opts.end)) Object.assign(opts, yearWindow());
     const cached = await fromCache(opts, f, maxFresh);
     if (cached.series) return cached.series;
     const url = buildUrl(opts);
@@ -299,7 +309,7 @@
     return (j.results || []).map(r => ({ name: r.name, admin: [r.admin1, r.country].filter(Boolean).join(', '), lat: r.latitude, lon: r.longitude }));
   }
 
-  const api = { MODES, BASE_VARS, CACHE_FILES, buildUrl, parseOpenMeteo, finalise, sample, lerpAt, parseCsv, describe, fetchSeries, fromCache, sliceHourly, geocode, WMO };
+  const api = { MODES, BASE_VARS, CACHE_FILES, yearWindow, buildUrl, parseOpenMeteo, finalise, sample, lerpAt, parseCsv, describe, fetchSeries, fromCache, sliceHourly, geocode, WMO };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ArienWeather = api;
 })(typeof window !== 'undefined' ? window : globalThis);

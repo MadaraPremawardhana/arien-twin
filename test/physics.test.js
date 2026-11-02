@@ -1,5 +1,7 @@
 const P = require('../src/physics.js');
 const W = require('../src/weather.js');
+const PN = require('../src/panels.js');
+const PL = require('../src/places.js');
 let fails = 0, passes = 0;
 function ok(cond, msg) { if (cond) passes++; else { fails++; console.log('FAIL:', msg); } }
 function near(a, b, tol, msg) { ok(Math.abs(a - b) <= tol, `${msg}: got ${a.toFixed(4)}, want ${b} ±${tol}`); }
@@ -189,6 +191,62 @@ ok(W.describe(61, 90) === 'Light rain' && W.describe(1, 10) === 'Clear sky', 'we
   const hist = { ...cacheJson, utc_offset_seconds: 0 };
   const c3 = await W.fetchSeries({ mode: 'historical', lat, lon, start: '2024-06-22', end: '2024-06-22', cacheBase: 'https://cache.test/' }, routed(liveBusy, hist));
   ok(c3.fromCache && c3.time.length === 24, 'historical dates sliced from cache: ' + c3.time.length);
+  // --- panel library ---
+  PN.LIST.forEach(p => near(p.wp / (p.w * p.l * 1000), p.eff, 0.004, `${p.code}: datasheet power matches efficiency × area`));
+  ok(new Set(PN.LIST.map(p => p.id)).size === PN.LIST.length && !!PN.byId(PN.DEFAULT_ID), 'panel ids unique, default exists');
+  const arr = { rows: 2, cols: 5, panelW: 1, panelL: 1.6, eff: 0.2, gammaPct: -0.35, cellsX: 6, cellsY: 10, landscape: false };
+  PN.applyTo(arr, 'aiko-2p-460');
+  ok(arr.panelW === 1.134 && arr.panelL === 1.757 && arr.eff === 0.231 && arr.gammaPct === -0.26 && arr.cellsY === 18, 'applyTo copies datasheet values');
+  near(PN.arrayKwp(arr), 4.6, 1e-9, '10 × 460 W = 4.6 kWp');
+  ok(PN.matches(arr), 'array matches its model');
+  PN.setLandscape(arr, true); ok(arr.panelW === 1.757 && arr.panelL === 1.134 && arr.cellsX === 18 && PN.matches(arr), 'landscape swaps sides and cells');
+  arr.eff = 0.25; ok(!PN.matches(arr), 'edited efficiency no longer matches the model');
+  // --- places ---
+  const pc = PL.parseCoords('51.9956, -0.9906'); ok(pc && pc.lat === 51.9956 && pc.lon === -0.9906, 'coordinates parsed');
+  const pc2 = PL.parseCoords('51.9956N 0.9906W'); ok(pc2 && pc2.lon === -0.9906, 'N/W coordinates parsed');
+  ok(!PL.parseCoords('Buckingham') && !PL.parseCoords('95, 10'), 'non-coordinates rejected');
+  ok(PL.isUkPostcode('mk18 1eg') && PL.isUkPostcode('SW1A1AA') && !PL.isUkPostcode('London') && PL.normPostcode('sw1a1aa') === 'SW1A 1AA', 'UK postcodes recognised');
+  ok(PL.isUkOutcode('MK18') && !PL.isUkOutcode('Leeds'), 'UK outward codes recognised');
+  const hits = [];
+  const geoFetch = (fail) => async (u) => {
+    hits.push(u.split('/')[2]);
+    if (fail && fail.test(u)) return { ok: false, status: 503, json: async () => ({}) };
+    if (u.includes('postcodes.io/postcodes/')) return { ok: true, status: 200, json: async () => ({ status: 200, result: { postcode: 'MK18 1EG', latitude: 51.999, longitude: -0.987, admin_district: 'Buckinghamshire', parish: 'Buckingham', country: 'England' } }) };
+    if (u.includes('nominatim')) return { ok: true, status: 200, json: async () => [{ lat: '51.5034', lon: '-0.1276', display_name: '10 Downing Street, Westminster, London, Greater London, England, SW1A 2AA, United Kingdom', address: { city: 'London' } }] };
+    return { ok: true, status: 200, json: async () => ({ results: [{ name: 'Leeds', admin1: 'England', country: 'United Kingdom', latitude: 53.8, longitude: -1.55 }] }) };
+  };
+  let r1 = await PL.search('MK18 1EG', { fetch: geoFetch() });
+  ok(r1.results[0].source === 'postcodes.io' && r1.results[0].name === 'MK18 1EG' && hits[0] === 'api.postcodes.io', 'postcode → postcodes.io');
+  r1 = await PL.search('10 Downing Street, London', { fetch: geoFetch() });
+  ok(r1.results[0].source === 'OpenStreetMap' && r1.results[0].place === 'London' && Math.abs(r1.results[0].lat - 51.5034) < 1e-6, 'address → OpenStreetMap');
+  r1 = await PL.search('Leeds', { fetch: geoFetch(/nominatim/) });
+  ok(r1.results[0].source === 'Open-Meteo', 'falls back to Open-Meteo when OpenStreetMap fails');
+  let gerr = ''; try { await PL.search('Leeds', { fetch: async () => { throw new TypeError('Failed to fetch'); } }); } catch (e) { gerr = e.message; }
+  ok(/Could not reach the place search/.test(gerr), 'all geocoders down → clear error');
+  r1 = await PL.search('Somewhere', { google: async () => [{ name: 'G', detail: '', lat: 1, lon: 2, source: 'Google' }] });
+  ok(r1.results[0].source === 'Google' && hits.filter(h => h.includes('nominatim')).length === 2, 'Google geocoder used alone when Google tiles show');
+  const site = { name: 'Buckingham, England, United Kingdom', lat: 51.99, lon: -0.99 };
+  const kw = (a) => a.kwp;
+  ok(PL.autoName(site, [{ azimuth: 180, kwp: 5.16 }], kw) === 'Buckingham 5.16 kWp south-facing', 'auto name: ' + PL.autoName(site, [{ azimuth: 180, kwp: 5.16 }], kw));
+  ok(PL.autoName(site, [{ azimuth: 90, kwp: 3 }, { azimuth: 270, kwp: 3 }], kw) === 'Buckingham 6.00 kWp east + west', 'auto name east-west');
+  ok(PL.autoName(site, [{ azimuth: 180, kwp: 5.16 }], kw, ['Buckingham 5.16 kWp south-facing']) === 'Buckingham 5.16 kWp south-facing (2)', 'auto name made unique');
+  ok(PL.autoName({ name: '51.9956, -0.9906', lat: 51.9956, lon: -0.9906 }, [], kw, [], Date.UTC(2026, 10, 2)) === 'Site at 51.996°N 0.991°W site, 2 Nov', 'auto name without a place or arrays');
+  const mem = { d: {}, getItem(k) { return this.d[k] ?? null; }, setItem(k, v) { this.d[k] = String(v); }, removeItem(k) { delete this.d[k]; } };
+  const e1 = PL.saveSite(mem, { name: 'Garage roof', snap: { v: 1 } }); const e2 = PL.saveSite(mem, { name: 'garage roof', snap: { v: 2 } });
+  ok(e2.replaced && PL.listSites(mem).length === 1 && PL.listSites(mem)[0].snap.v === 2 && e2.entry.id === e1.entry.id, 'same name replaces the saved site');
+  PL.saveSite(mem, { name: 'House', snap: {} }); PL.removeSite(mem, e1.entry.id);
+  ok(PL.listSites(mem).length === 1 && PL.listSites(mem)[0].name === 'House', 'saved site removed');
+  // --- 12-month weather for yield ---
+  const yw = W.yearWindow(Date.UTC(2026, 10, 2));
+  ok(yw.end === '2026-10-27' && yw.start === '2025-10-28', 'year window ends 6 days ago: ' + JSON.stringify(yw));
+  ok(W.buildUrl({ mode: 'year', lat, lon, ...yw }).startsWith('https://archive-api.open-meteo.com/v1/archive?') && W.CACHE_FILES.year === 'year.json', 'year mode uses ERA5 archive and year.json');
+  const yJson = JSON.parse(okBody); const t0 = Date.UTC(2025, 10, 1) / 1000;
+  yJson.hourly = { time: Array.from({ length: 8760 }, (_, i) => t0 + i * 3600) };
+  ['temperature_2m', 'cloud_cover', 'wind_speed_10m', 'wind_direction_10m', 'weather_code', 'shortwave_radiation', 'diffuse_radiation'].forEach(v => { yJson.hourly[v] = new Array(8760).fill(1); });
+  yJson.arien_cached_at = new Date(Date.now() - 3 * 86400e3).toISOString();
+  let yLive = 0; const yFetch = async (u) => u.startsWith('https://cache.test/') ? { status: 200, ok: true, json: async () => yJson } : (yLive++, { status: 503, ok: false, json: async () => ({}) });
+  const ys = await W.fetchSeries({ mode: 'year', lat, lon, cacheBase: 'https://cache.test/' }, yFetch);
+  ok(ys.fromCache && ys.time.length === 8760 && yLive === 0 && /last 12 months/.test(ys.source), 'a 3-day-old cached year is used without calling Open-Meteo');
   console.log(`${passes} passed, ${fails} failed`);
   process.exit(fails ? 1 : 0);
   })();

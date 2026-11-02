@@ -34,7 +34,9 @@
   window.Worker = PatchedWorker;
 })();
 </script>
+<link rel="icon" type="image/png" href="@@FAVICON@@">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.146.0/Build/Cesium/Widgets/widgets.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Saira+Condensed:wght@500;600;700&display=swap">
@@ -63,6 +65,16 @@
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="1.5"/><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+    <symbol id="i-design" viewBox="0 0 24 24"><path d="M3 21l3.5-1 11-11-2.5-2.5-11 11z"/><path d="M14 5l2.5-2.5L21 7l-2.5 2.5"/><path d="M3 3h6M3 3v6"/></symbol>
+    <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M5 3l14 7-6 2-2 6z"/></symbol>
+    <symbol id="i-rect" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1"/></symbol>
+    <symbol id="i-free" viewBox="0 0 24 24"><path d="M4 20c2-6 4-13 8-13s2 8 5 8 2-4 3-6"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M12 3c3.6 0 6 2.6 6 5.8 0 2.9-2.2 5.2-5 5.6V21h-2v-6.6C8.2 14 6 11.7 6 8.8 6 5.6 8.4 3 12 3z"/></symbol>
+    <symbol id="i-locate" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2-6z"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L5 13h6l-1 9 8-11h-6z"/></symbol>
+    <symbol id="i-bars" viewBox="0 0 24 24"><path d="M4 20h16M7 17v-5M12 17V7M17 17v-8"/></symbol>
+    <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
     <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3v13M7 11l5 5 5-5M5 21h14"/></symbol>
   </defs>
 </svg>
@@ -71,7 +83,9 @@
   <div id="globe" aria-label="3D site view"></div>
 
   <nav id="rail" aria-label="Panels">
-    <a class="brand" title="ARIEN — Solar forecasts from physics"><span>AR</span><span>IEN</span></a>
+    <a class="brand" title="ARIEN — physics-based solar forecasting"><img src="@@LOGO@@" alt="ARIEN" width="52" height="11"></a>
+    <button data-view="design" title="Design planner (0)" aria-pressed="false"><svg><use href="#i-design"/></svg><span>Design</span></button>
+    <span class="rail-sep"></span>
     <button data-panel="site" title="Location (1)"><svg><use href="#i-site"/></svg><span>Site</span></button>
     <button data-panel="time" title="Weather period (2)"><svg><use href="#i-time"/></svg><span>Weather</span></button>
     <button data-panel="panels" title="Solar arrays (3)"><svg><use href="#i-panels"/></svg><span>Arrays</span></button>
@@ -109,7 +123,12 @@
           <button class="btn primary" id="site-go">Go to coordinates</button>
           <button class="btn" id="site-reset">Default site</button>
         </div>
-        <p class="hint">Moving to a new site clears its arrays and obstacles. Use <b>World → Save scene</b> first if you want to keep them.</p>
+        <p class="hint">Moving to a new site clears its arrays and obstacles. Save the site below first if you want to keep them.</p>
+        <fieldset><legend>Saved sites</legend>
+          <div class="row"><input id="site-name" class="site-name-input" type="text" placeholder="Auto-named" aria-label="Site name" maxlength="80"><button class="btn primary" id="site-save"><svg><use href="#i-save"/></svg>Save</button></div>
+          <p class="hint">Leave the name empty for one made from the place, size and orientation. Saved in this browser; share with <b>World → Site settings for visitors</b> or <b>Save scene</b>.</p>
+          <ul class="place-results saved-list"></ul>
+        </fieldset>
         <dl class="facts" id="site-facts"></dl>
       </section>
 
@@ -197,10 +216,12 @@
             </div>
           </fieldset>
           <fieldset><legend>Panel</legend>
+            <div class="field"><label for="arr-model">Panel model</label><select id="arr-model"></select><p class="hint" id="arr-model-info"></p></div>
+            <div class="seg small" id="arr-orient"><button data-v="portrait">Portrait</button><button data-v="landscape">Landscape</button></div>
             <div class="split">
               <div class="field"><label for="arr-pw">Width (m)</label><input id="arr-pw" type="number" min="0.2" max="3" step="0.01"></div>
               <div class="field"><label for="arr-pl">Length (m)</label><input id="arr-pl" type="number" min="0.2" max="3" step="0.01"></div>
-              <div class="field"><label for="arr-eff">Efficiency (0–1)</label><input id="arr-eff" type="number" min="0.01" max="0.5" step="0.005"></div>
+              <div class="field"><label for="arr-eff">Efficiency (%)</label><input id="arr-eff" type="number" min="1" max="50" step="0.1"></div>
               <div class="field"><label for="arr-gamma">Temp. coefficient (%/°C)</label><input id="arr-gamma" type="number" min="-1" max="0" step="0.01"></div>
               <div class="field"><label for="arr-cx">Cells across</label><input id="arr-cx" type="number" min="1" max="24" step="1"></div>
               <div class="field"><label for="arr-cy">Cells down</label><input id="arr-cy" type="number" min="1" max="24" step="1"></div>
@@ -380,11 +401,16 @@
       <button class="chip" id="btn-visuals" aria-pressed="true" title="Weather visuals (V)"><svg><use href="#i-eye"/></svg>Visuals</button>
       <button class="chip" id="btn-dash" aria-pressed="false" title="Dashboard (D)"><svg><use href="#i-chart"/></svg>Dashboard</button>
     </div>
+    <div class="hud-btns">
+      <button class="chip" id="btn-forecast" title="Energy over the next 7 days"><svg><use href="#i-bolt"/></svg>Forecast</button>
+      <button class="chip" id="btn-yield" title="Energy over a year of real weather"><svg><use href="#i-bars"/></svg>Est. yield</button>
+    </div>
   </div>
 
   <aside id="dash" hidden aria-label="Dashboard">
     <header class="drawer-head"><h2>Dashboard</h2><button class="icon-btn" id="dash-close" title="Close (D)"><svg><use href="#i-close"/></svg></button></header>
     <div class="drawer-body">
+      <div class="results-slot" hidden></div>
       <div class="reco" id="reco">Run the period to get a recommendation.</div>
       <h3 class="sub">Weather now</h3>
       <dl class="overview" id="overview"></dl>
@@ -422,12 +448,76 @@
     <button class="btn primary run" id="t-run" title="Compute the whole period at 15-minute steps"><svg><use href="#i-run"/></svg><span class="run-label">Fast-forward period</span></button>
   </footer>
 
+  <section id="planner" hidden aria-label="Design planner">
+    <aside class="pl-col pl-left">
+      <header class="pl-head"><h2>Design</h2><span class="badge">2D planner</span></header>
+      <div class="pl-body">
+        <div class="field"><label for="pl-name">Site name</label><input id="pl-name" class="site-name-input" type="text" placeholder="Auto-named" maxlength="80"></div>
+        <div class="field"><label for="pl-model">Panel model</label><select id="pl-model"></select><p class="hint" id="pl-model-info"></p></div>
+        <div class="field"><label for="pl-tilt">Tilt <output id="pl-tilt-out" class="mono"></output></label><input id="pl-tilt" type="range" min="0" max="90" step="1"></div>
+        <div class="field"><label for="pl-az">Azimuth <output id="pl-az-out" class="mono"></output></label><input id="pl-az" type="range" min="0" max="359" step="1"><p class="hint" id="pl-az-note"></p></div>
+        <p class="hint pl-editing" id="pl-editing"></p>
+        <div class="pl-summary" id="pl-summary"></div>
+        <details class="pl-adv"><summary>Advanced</summary>
+          <div class="field"><label>Mounting</label><div class="seg small" id="pl-mount"><button data-v="flush">Flush on roof</button><button data-v="rows">Racked rows</button></div></div>
+          <div class="field"><label>Panel orientation</label><div class="seg small" id="pl-orient"><button data-v="portrait">Portrait</button><button data-v="landscape">Landscape</button></div></div>
+          <div class="split">
+            <div class="field"><label for="pl-pitch">Row spacing (m)</label><input id="pl-pitch" type="number" min="0.5" step="0.05"></div>
+            <div class="field"><label for="pl-gap">Gap between panels (m)</label><input id="pl-gap" type="number" min="0" max="1" step="0.01"></div>
+            <div class="field"><label for="pl-setback">Edge setback (m)</label><input id="pl-setback" type="number" min="0" max="5" step="0.05"></div>
+            <div class="field"><label for="pl-mounth">Mount height (m)</label><input id="pl-mounth" type="number" min="0" max="5" step="0.05"></div>
+          </div>
+          <label class="toggle"><input type="checkbox" id="pl-pitch-auto"><span>Space racked rows to avoid shading at winter-solstice noon</span></label>
+        </details>
+        <div class="pl-actions">
+          <button class="btn primary wide" id="pl-sim">Simulate in 3D →</button>
+          <div class="split"><button class="btn" id="pl-forecast"><svg><use href="#i-bolt"/></svg>Forecast</button><button class="btn" id="pl-yield"><svg><use href="#i-bars"/></svg>Est. yield</button></div>
+          <button class="btn wide" id="pl-save"><svg><use href="#i-save"/></svg>Save</button>
+        </div>
+        <div class="field"><label>Saved sites</label><ul class="place-results saved-list"></ul></div>
+      </div>
+    </aside>
+    <div class="pl-mapwrap">
+      <div id="pl-map"></div>
+      <form class="pl-search" id="pl-search" autocomplete="off">
+        <div class="row"><input id="pl-q" type="search" placeholder="Search address or postcode" aria-label="Search address or postcode"><button class="btn primary" type="submit">Go</button></div>
+        <ul class="place-results" id="pl-results" hidden></ul>
+      </form>
+      <div class="pl-tools" id="pl-tools" role="toolbar" aria-label="Drawing tools">
+        <button data-tool="place" aria-pressed="true" title="Place (1)"><svg><use href="#i-cursor"/></svg>Place</button>
+        <button data-tool="rect" title="Rectangle (2)"><svg><use href="#i-rect"/></svg>Rectangle</button>
+        <button data-tool="free" title="Freehand (3)"><svg><use href="#i-free"/></svg>Freehand</button>
+        <button data-tool="obst" title="Obstruction (4)"><svg><use href="#i-bell"/></svg>Obstruction</button>
+        <div class="pl-obwrap" id="pl-obwrap" hidden>
+          <select id="pl-obtype" aria-label="Obstruction type"></select>
+          <label class="pl-oh">Height m<input id="pl-ob-h" type="number" min="0.2" max="60" step="0.5"></label>
+        </div>
+      </div>
+      <div class="pl-layers" id="pl-layers"><button data-layer="sat" aria-pressed="true">Satellite</button><button data-layer="map">Map</button></div>
+      <button class="icon-btn pl-locate" id="pl-locate" title="Back to the site"><svg><use href="#i-locate"/></svg></button>
+      <div class="pl-hint" id="pl-hint"></div>
+    </div>
+    <aside class="pl-col pl-right">
+      <header class="pl-head"><h2>Design kit</h2><span class="badge" title="Runs in your browser; no AI service is called">rules-based</span></header>
+      <div class="pl-body">
+        <div class="field"><label for="pl-area">Roof area (m²)</label>
+          <div class="row"><input id="pl-area" type="number" min="1" step="1"><button class="btn primary" id="pl-analyse">Analyse</button></div>
+          <p class="hint">Draw a rectangle or freehand area on the map, or enter the area.</p></div>
+        <div id="pl-analysis" hidden></div>
+        <div class="results-slot" hidden></div>
+        <div class="chat" id="pl-chat" aria-live="polite"></div>
+      </div>
+      <form class="chat-in" id="pl-chat-form"><input id="pl-chat-q" placeholder="e.g. 10 panels in London, south-facing" aria-label="Describe the design"><button class="icon-btn send" title="Send"><svg><use href="#i-send"/></svg></button></form>
+    </aside>
+  </section>
+
   <div id="modebar" hidden><span id="modebar-text"></span> <kbd>Esc</kbd> to cancel</div>
   <div id="toasts" aria-live="polite"></div>
   <div id="boot">
     <div class="setup" id="setup" role="dialog" aria-labelledby="setup-title">
       <header class="setup-head">
-        <strong id="setup-title">ARIEN Twin Studio</strong>
+        <img class="setup-logo" src="@@LOGO@@" alt="ARIEN" width="150" height="31">
+        <strong id="setup-title">Twin Studio</strong>
         <span>Connect the 3D world, then the weather. Keys stay in this browser and are sent only to the service they belong to.</span>
       </header>
       <p class="setup-note" id="setup-note" hidden></p>
@@ -476,9 +566,13 @@
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.147.0/examples/js/exporters/GLTFExporter.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>/*@@PHYSICS@@*/</script>
 <script>/*@@WEATHER@@*/</script>
 <script>/*@@MODELS@@*/</script>
+<script>/*@@PANELS@@*/</script>
+<script>/*@@PLACES@@*/</script>
+<script>/*@@PLANNER@@*/</script>
 <script>/*@@APP@@*/</script>
 </body>
 </html>

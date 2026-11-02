@@ -2,7 +2,40 @@
 
 Browser digital twin of rooftop PV for [ARIEN](https://arien.base44.app/): a CesiumJS 3D world (Cesium ion or Google Photorealistic 3D Tiles), Open-Meteo weather, the five physics irradiance pathways from the thesis plus the panel thermal model, cell-level shading, simulation from real time to 1 day per second, and volumetric weather visuals. No Pixel Streaming: it runs on each visitor's GPU.
 
-**Live site:** https://madarapremawardhana.github.io/arien-twin/
+**Live site:** https://madarapremawardhana.github.io/arien-twin/ (planner: `…/arien-twin/#design`)
+
+## Design planner (2D)
+
+**Design** at the top of the rail opens a satellite map for roughing out a layout. The panels are the same arrays the 3D twin simulates.
+
+- **Search address or postcode**: UK postcodes go to postcodes.io, addresses and places to OpenStreetMap Nominatim, then Open-Meteo. Coordinates (`51.99, -0.99`) work too. With Google 3D tiles shown, search uses Google's geocoder (through Cesium ion, or the Geocoding API on your Google key), as Google's terms require.
+- **Tools**: *Place* (one panel per click; drag to move, right-click to remove), *Rectangle* and *Freehand* (draw a roof area; it fills with rows of panels and re-fills when settings change), *Obstruction* (trees, hedges, walls, chimneys, buildings, poles, with height). Keys 1–4 switch tools; Delete removes the selection.
+- **Left panel**: site name (blank = automatic name), panel model, tilt, azimuth, array summary with the annual shading loss, and Advanced (flush on roof or racked rows, portrait/landscape, row spacing, gaps, edge setback, mount height). Settings apply to the selected group, or to the whole design when nothing is selected.
+- **Simulate in 3D →** settles the panels onto the roofs in the 3D tiles, then runs the period. **Forecast** and **Est. yield** are here and on the twin's HUD.
+- **Design kit**: *Analyse* sizes a roof area (panels, kWp and kWh a year from this site's last 12 months of weather). The request box understands short instructions such as "10 panels in London, south-facing", "5 kWp of Aiko panels in MK18 1EG", "east-west 16 panels", "add a tree 9 m south, 12 m tall", "estimate yield", "save as Garage roof". It is rules-based and runs in the browser; no AI service is called.
+
+### Panel library (`src/panels.js`)
+
+| Panel | Power | Efficiency | Size (m) | Pmax coefficient |
+|---|---|---|---|---|
+| LONGi Hi-MO 6 Explorer LR5-54HTH-430M | 430 W | 22.0% | 1.722 × 1.134 | −0.29 %/°C |
+| LONGi Hi-MO X10 Explorer LR7-54HVH-485M | 485 W | 23.8% | 1.800 × 1.134 | −0.26 %/°C |
+| AIKO Neostar 2P A460-MAH54Mw | 460 W | 23.1% | 1.757 × 1.134 | −0.26 %/°C |
+| JinkoSolar Tiger Neo JKM440N-54HL4R-B | 440 W | 22.0% | 1.762 × 1.134 | −0.29 %/°C |
+| JA Solar DeepBlue 4.0 Pro JAM54D40-450/LR | 450 W | 22.5% | 1.762 × 1.134 | −0.29 %/°C |
+| Trina Vertex S+ TSM-440NEG9R.28 | 440 W | 22.0% | 1.762 × 1.134 | −0.30 %/°C |
+| Qcells Q.TRON BLK M-G2+ 430 | 430 W | 22.0% | 1.722 × 1.134 | −0.30 %/°C |
+| REC Alpha Pure-R 430 | 430 W | 22.3% | 1.730 × 1.118 | −0.24 %/°C |
+| Maxeon 7 SPR-MAX7-445-PT | 445 W | 24.1% | 1.787 × 1.035 | −0.27 %/°C |
+| JinkoSolar Tiger Neo JKM580N-72HL4-V (commercial) | 580 W | 22.5% | 2.278 × 1.134 | −0.29 %/°C |
+
+Values are STC from the manufacturers' datasheets (sources in `src/panels.js`). The twin computes power as efficiency × panel area × plane-of-array irradiance, corrected with the Pmax temperature coefficient, so each model's datasheet efficiency sets its yield. Editing a value by hand turns the array into a custom panel.
+
+### Saved sites, forecast and yield
+
+- **Site → Saved sites** and the planner's **Save** keep named designs in this browser. A blank name becomes, for example, "Buckingham 5.16 kWp south-facing". To share a design use the admin publish or **Save scene**.
+- **Forecast**: next 7 days, daily kWh, live model.
+- **Est. yield**: hourly physics over ERA5 reanalysis for the last 12 months (365 days ending 6 days ago), with every compared model, monthly kWh, kWh/kWp and the weather-based shading loss. No inverter, cable or soiling losses. The planner's shading figure before that is a clear-sky estimate (21st of each month, Kasten with no cloud).
 
 ## Put the Cesium ion key in the site ("hardcode" it)
 
@@ -22,7 +55,7 @@ The admin panel does the same: tick **Include keys** and press **Publish setting
 
 Only the variables the thesis models use are requested: `temperature_2m`, `cloud_cover`, `wind_speed_10m`, `wind_direction_10m`, `weather_code`, `shortwave_radiation`, `diffuse_radiation` (precipitation and snow are derived from the weather code for the visuals). Open-Meteo's free API drops requests at busy times, mostly around the full hour (HTTP 503 "The service is overloaded"), so the site reads a copy first:
 
-- `.github/workflows/weather-cache.yml` runs at :23 past each hour and when `config.json` changes. It writes `forecast.json`, `historical.json` (92 days) and `previous.json` (forecasts issued 1–4 days ahead, 45 days) to the `weather-data` branch.
+- `.github/workflows/weather-cache.yml` runs at :23 past each hour and when `config.json` changes. It writes `forecast.json`, `historical.json` (92 days), `previous.json` (forecasts issued 1–4 days ahead, 45 days) and `year.json` (ERA5, 365 days, daily) to the `weather-data` branch.
 - The page uses that copy for the published site when it covers the request (fresh: 3 hours for forecasts, 30 hours otherwise), otherwise calls Open-Meteo with two retries, and falls back to an older copy before giving up.
 - Other places, earlier dates and leads beyond 4 days go to Open-Meteo directly.
 
@@ -47,6 +80,8 @@ node test/physics.test.js     # physics and weather unit tests
 ARIEN_DEPS=node_modules python3 test/run_browser.py /tmp/shots full
 ARIEN_DEPS=node_modules python3 test/admin_check.py /tmp/admin
 ARIEN_DEPS=node_modules python3 test/diag_check.py
+ARIEN_DEPS=node_modules python3 test/planner_check.py /tmp/planner   # needs leaflet@1.9.4 too
+ARIEN_DEPS=node_modules python3 test/models_check.py /tmp/models
 ```
 
 Edit files in `src/`, run `build.py`, commit both `src/` and `index.html`.
@@ -69,7 +104,7 @@ Edit files in `src/`, run `build.py`, commit both `src/` and `index.html`.
 
 ## Physics: what is implemented and what needs the PV Science project
 
-All in `src/physics.js`, unit-tested in `test/physics.test.js` (75 checks, including sun position against NOAA values and the weather cache).
+All in `src/physics.js`, unit-tested in `test/physics.test.js` (110 checks, including sun position against NOAA values, the weather cache, the panel library, geocoding and saved sites).
 
 | Part | Implementation | Status |
 |---|---|---|
@@ -89,6 +124,9 @@ All in `src/physics.js`, unit-tested in `test/physics.test.js` (75 checks, inclu
 ```
 src/physics.js     solar geometry, 5 models, thermal, ray casting, metrics (no DOM)
 src/weather.js     Open-Meteo URLs and parsing, weather cache, CSV import, interpolation
+src/panels.js      panel library from datasheets
+src/places.js      place, address and postcode search; automatic names; saved sites
+src/planner.js     2D Design planner (Leaflet), roof-area filling, Design kit
 src/models.js      obstacle models (trees, hedges, walls, chimneys, buildings, poles) at 3 levels of detail, exported as glTF
 src/app.js         Cesium world, arrays/obstacles, simulation loop, visuals, UI
 src/template.html  markup; src/style.css styles
@@ -105,4 +143,7 @@ tools/fetch_weather.py fills the weather-data branch (run by the workflow)
 - 3D-tile shading uses Cesium's ray picking, which only sees tiles currently rendered; the tool flies to a top-down view first. Distant hills outside that view are missed.
 - Above ~24,000 cells the view draws whole panels instead of cells; physics still runs per cell.
 - Open-Meteo's free API is non-commercial only. Commercial use needs a paid plan, and historical endpoints need the Professional tier.
-- Google Photorealistic tiles: place-name search is disabled while they are shown (Google requires its own geocoder).
+- Google Photorealistic tiles: search then uses Google's geocoder. With your own Google key, enable the Geocoding API on it.
+- The planner's satellite layer is Esri World Imagery. Esri's terms require an ArcGIS account and API key for commercial apps; OpenStreetMap Nominatim allows light use only (1 request a second, no autocomplete). Both need replacing or licensing before a commercial launch.
+- Flush roof rows are placed on one plane in the planner (each row higher than the one in front). On the 3D tiles each row is dropped onto the roof under it.
+- Est. yield uses coarser shading cells (3 × 6 per panel) and reuses shading for sun positions within about 1.5°; energy differed from a full-cell run without reuse by 0.07–0.17% in three test scenes (open roof, tall tree close by, racked rows).

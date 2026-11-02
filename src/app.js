@@ -1,7 +1,7 @@
 /* ARIEN Twin Studio — browser digital twin (CesiumJS world, Open-Meteo weather, thesis physics). */
 (function () {
   'use strict';
-  const PH = window.ArienPhysics, WX = window.ArienWeather;
+  const PH = window.ArienPhysics, WX = window.ArienWeather, PN = window.ArienPanels, PL = window.ArienPlaces;
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   const D2R = Math.PI / 180, R2D = 180 / Math.PI;
@@ -34,7 +34,7 @@
     visuals: 'high', shadowsOn: true, colourMode: 'real',
     sim: { lastT: null, T: {}, energyWh: 0, lastW: null, lastRes: null, playing: false },
     shade: { dirty: true, lastSun: null, trans: [], useTiles: false, profiles: {}, step: 10, scope: 'array' },
-    run: null, placing: null
+    run: null, placing: null, zones: [], designName: '', view: 'twin', forecastRes: null, yieldRes: null, yearWx: null
   };
   const geoms = new Map();      // array id -> PH geometry
   let viewer = null, scene = null, siteM = null, siteMinv = null, tileset = null, handler = null, cloudStage = null;
@@ -84,14 +84,17 @@
   const saveSoon = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveScene, 600); };
   function sceneSnapshot() {
     return { v: 1, site: { name: state.site.name, lat: state.site.lat, lon: state.site.lon }, worldSrc: state.world.src,
-      arrays: state.arrays, objects: state.objects, live: state.live, compare: state.compare, params: state.params, thermalCa: state.thermalCa,
+      arrays: state.arrays, objects: state.objects, zones: state.zones, designName: state.designName, live: state.live, compare: state.compare, params: state.params, thermalCa: state.thermalCa,
       visuals: state.visuals, shadowsOn: state.shadowsOn, colourMode: state.colourMode };
   }
   function applySnapshot(s) {
     if (!s || s.v !== 1) return false;
     Object.assign(state.site, s.site || {});
-    state.arrays = (s.arrays || []).map(a => ({ ...defaultArray(0, 0, 0), ...a }));
+    state.arrays = (s.arrays || []).map(a => ({ ...defaultArray(0, 0, 0), panelModel: 'custom', landscape: false, ...a }));
+    state.arrays.forEach(a => { if (a.panelModel !== 'custom' && !PN.matches(a)) a.panelModel = 'custom'; });
     state.objects = (s.objects || []).filter(o => PH.OBJECT_TYPES[o.type]);
+    state.zones = Array.isArray(s.zones) ? s.zones.filter(z => z && Array.isArray(z.poly)) : [];
+    state.designName = s.designName || '';
     if (s.live && LIVE_KEYS.includes(s.live)) state.live = s.live;
     if (s.compare) state.compare = { ...state.compare, ...s.compare };
     if (s.params) state.params = { ...clone(PH.DEFAULT_PARAMS), ...s.params };
@@ -115,9 +118,10 @@
 
   // ------------------------------------------------------------------ defaults
   function defaultArray(x, y, z) {
-    return { id: newId('a'), name: `Array ${state.arrays.length + 1}`, x, y, z, azimuth: 180, tilt: 35, rows: 2, cols: 6,
+    const a = { id: newId('a'), name: `Array ${state.arrays.length + 1}`, x, y, z, azimuth: 180, tilt: 35, rows: 2, cols: 6,
       panelW: 1.134, panelL: 1.722, colGap: 0.02, rowPitch: 3.2, mountHeight: 0.15, cellsX: 6, cellsY: 18,
-      eff: 0.21, gammaPct: -0.35, worldSrc: state.world.src };
+      eff: 0.21, gammaPct: -0.35, worldSrc: state.world.src, panelModel: 'custom', landscape: false };
+    return PN.applyTo(a, PN.DEFAULT_ID);
   }
   function defaultObject(type, x, y, z) {
     const t = PH.OBJECT_TYPES[type];
@@ -510,7 +514,8 @@
   // ------------------------------------------------------------------ input: select, place, drag, keys
   const drag = { item: null, kind: null, off: [0, 0], moved: false, startX: 0, startY: 0 };
   function pickItem(pos) {
-    const p = scene.pick(pos);
+    // an 11-pixel window, so gaps between leaves and needles (alpha-tested cards) still pick the tree
+    const p = scene.pick(pos, 11, 11);
     if (!p) return null;
     const id = typeof p.id === 'string' ? p.id : (p.primitive && typeof p.primitive.id === 'string' ? p.primitive.id : null);
     if (!id) return null;
@@ -690,14 +695,14 @@
   }
 
   // ------------------------------------------------------------------ simulation
-  function computePower(modelKey, w, sunVec, trans, Tstate, dtSec) {
+  function computePower(modelKey, w, sunVec, trans, Tstate, dtSec, arrs = state.arrays, gList = null) {
     const key = modelKey === 'seasonal' ? PH.seasonalModel(w.t, state.site.lat) : modelKey;
     const M = PH.MODELS[key];
     const ctx = { sun: w.sun, sunVec, N: w.N, api: w.api };
     const h = M.horizontal(ctx, state.params);
     let totalW = 0, poaArea = 0, area = 0, tArea = 0;
-    state.arrays.forEach((a, ai) => {
-      const g = geoms.get(a.id) || geomFor(a);
+    arrs.forEach((a, ai) => {
+      const g = gList ? gList[ai] : (geoms.get(a.id) || geomFor(a));
       const tp = M.transpose(h, ctx, g.n, g.tilt, state.params);
       const tr = trans[ai];
       const nCells = a.rows * a.cols * a.cellsX * a.cellsY;
@@ -1328,7 +1333,7 @@ void main() {
 
   function refreshLists() {
     $('#arr-list').innerHTML = state.arrays.map(a => {
-      const kwp = a.rows * a.cols * a.panelW * a.panelL * a.eff;
+      const kwp = PN.arrayKwp(a);
       return `<li data-id="${a.id}" aria-selected="${state.sel && state.sel.id === a.id}"><span class="dot"></span>${escapeHtml(a.name)}<span class="meta">${a.rows * a.cols} × · ${kwp.toFixed(2)} kWp</span></li>`;
     }).join('') || '<li class="hint" style="cursor:default">No arrays yet.</li>';
     $('#obj-list').innerHTML = state.objects.map(o => `<li data-id="${o.id}" aria-selected="${state.sel && state.sel.id === o.id}"><span class="dot obj"></span>${PH.OBJECT_TYPES[o.type].label}<span class="meta">${o.dims.height.toFixed(1)} m</span></li>`).join('');
@@ -1344,13 +1349,18 @@ void main() {
       $('#arr-name').value = a.name;
       const set = (id, v) => { const el = $(id); if (document.activeElement !== el) el.value = v; };
       set('#arr-rows', a.rows); set('#arr-cols', a.cols); set('#arr-pitch', a.rowPitch.toFixed(2)); set('#arr-tilt', a.tilt); set('#arr-az', a.azimuth);
-      set('#arr-mount', a.mountHeight); set('#arr-gap', a.colGap); set('#arr-pw', a.panelW); set('#arr-pl', a.panelL); set('#arr-eff', a.eff);
+      set('#arr-mount', a.mountHeight); set('#arr-gap', a.colGap); set('#arr-pw', a.panelW); set('#arr-pl', a.panelL); set('#arr-eff', +(a.eff * 100).toFixed(2));
+      $('#arr-model').value = PN.byId(a.panelModel) ? a.panelModel : 'custom';
+      const pm = PN.byId(a.panelModel);
+      $('#arr-model-info').innerHTML = pm ? `<b>${pm.wp} W · ${(pm.eff * 100).toFixed(1)}%</b> · ${pm.l.toFixed(3)} × ${pm.w.toFixed(3)} m · ${pm.gamma} %/°C · ${escapeHtml(pm.tech)}. Datasheet: ${escapeHtml(pm.source)}.`
+        : 'Your own values below. Efficiency is the datasheet module efficiency at STC.';
+      $$('#arr-orient button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'landscape') === !!a.landscape)));
       set('#arr-gamma', a.gammaPct); set('#arr-cx', a.cellsX); set('#arr-cy', a.cellsY);
       set('#arr-x', a.x.toFixed(2)); set('#arr-y', a.y.toFixed(2)); set('#arr-z', a.z.toFixed(2));
       $('#arr-tilt-out').textContent = a.tilt + '°';
       $('#arr-az-out').textContent = `${a.azimuth}° ${compass(a.azimuth)}`;
       const n = a.rows * a.cols, area = n * a.panelW * a.panelL;
-      $('#arr-capacity').innerHTML = `${n} panels · ${area.toFixed(1)} m² · <b>${(area * a.eff).toFixed(2)} kWp</b> · ${(n * a.cellsX * a.cellsY).toLocaleString()} cells`;
+      $('#arr-capacity').innerHTML = `${n} panels · ${area.toFixed(1)} m² · <b>${PN.arrayKwp(a).toFixed(2)} kWp</b> · ${(n * a.cellsX * a.cellsY).toLocaleString()} cells`;
     }
     if (isO && it) {
       const o = it, T = PH.OBJECT_TYPES[o.type];
@@ -1370,21 +1380,44 @@ void main() {
       if (opts.int) v = Math.round(v);
       if (opts.min != null) v = Math.max(opts.min, v); if (opts.max != null) v = Math.min(opts.max, v);
       a[key] = v;
+      if (opts.panel && !PN.matches(a)) a.panelModel = 'custom';
       if (opts.live) { const o = $(id + '-out'); if (o) o.textContent = key === 'azimuth' ? `${v}° ${compass(v)}` : v + '°'; }
       scheduleArrayRebuild(a, opts.live);
     });
     num('#arr-rows', 'rows', { int: true, min: 1, max: 40 }); num('#arr-cols', 'cols', { int: true, min: 1, max: 60 });
     num('#arr-pitch', 'rowPitch', { min: 0.3 }); num('#arr-tilt', 'tilt', { live: true, min: 0, max: 90 }); num('#arr-az', 'azimuth', { live: true, min: 0, max: 359 });
-    num('#arr-mount', 'mountHeight', { min: 0 }); num('#arr-gap', 'colGap', { min: 0 }); num('#arr-pw', 'panelW', { min: 0.2 }); num('#arr-pl', 'panelL', { min: 0.2 });
-    num('#arr-eff', 'eff', { min: 0.01, max: 0.5 }); num('#arr-gamma', 'gammaPct', { min: -1, max: 0 });
-    num('#arr-cx', 'cellsX', { int: true, min: 1, max: 24 }); num('#arr-cy', 'cellsY', { int: true, min: 1, max: 24 });
+    num('#arr-mount', 'mountHeight', { min: 0 }); num('#arr-gap', 'colGap', { min: 0 }); num('#arr-pw', 'panelW', { min: 0.2, panel: true }); num('#arr-pl', 'panelL', { min: 0.2, panel: true });
+    num('#arr-gamma', 'gammaPct', { min: -1, max: 0, panel: true });
+    num('#arr-cx', 'cellsX', { int: true, min: 1, max: 24, panel: true }); num('#arr-cy', 'cellsY', { int: true, min: 1, max: 24, panel: true });
+    $('#arr-eff').addEventListener('change', (e) => {
+      const a = selItem(); if (!a || state.sel.kind !== 'array') return;
+      const v = Number(e.target.value); if (!isFinite(v)) return;
+      a.eff = clamp(v, 1, 50) / 100; if (!PN.matches(a)) a.panelModel = 'custom'; scheduleArrayRebuild(a);
+    });
+    $('#arr-model').innerHTML = panelOptionsHtml();
+    $('#arr-model').addEventListener('change', (e) => {
+      const a = selItem(); if (!a || state.sel.kind !== 'array') return;
+      if (e.target.value === 'custom') a.panelModel = 'custom'; else PN.applyTo(a, e.target.value);
+      scheduleArrayRebuild(a);
+    });
+    $('#arr-orient').addEventListener('click', (e) => {
+      const b = e.target.closest('button'); const a = selItem(); if (!b || !a || state.sel.kind !== 'array') return;
+      PN.setLandscape(a, b.dataset.v === 'landscape'); scheduleArrayRebuild(a);
+    });
     num('#arr-x', 'x'); num('#arr-y', 'y'); num('#arr-z', 'z');
     $('#arr-name').addEventListener('change', (e) => { const a = selItem(); if (a) { a.name = e.target.value.trim() || a.name; refreshLists(); saveSoon(); } });
+  }
+  /** <option>s for every panel in the library, grouped by use */
+  function panelOptionsHtml(withCustom = true) {
+    const groups = {};
+    PN.LIST.forEach(p => { (groups[p.use] = groups[p.use] || []).push(p); });
+    return Object.entries(groups).map(([g, ps]) => `<optgroup label="${escapeHtml(g)}">${ps.map(p => `<option value="${p.id}">${escapeHtml(PN.label(p))} · ${(p.eff * 100).toFixed(1)}%</option>`).join('')}</optgroup>`).join('')
+      + (withCustom ? '<option value="custom">Custom panel (enter values)</option>' : '');
   }
   let rebuildTimer = null;
   function scheduleArrayRebuild(a, live) {
     clearTimeout(rebuildTimer);
-    const go = () => { buildArrayPrimitive(a); state.shade.dirty = true; clearProfiles(a); state.run = null; fillEditors(); refreshLists(); saveSoon(); simulateNow(true); drawSunPath(); };
+    const go = () => { buildArrayPrimitive(a); state.shade.dirty = true; clearProfiles(a); state.run = null; fillEditors(); refreshLists(); saveSoon(); simulateNow(true); drawSunPath(); designChanged(); };
     if (live) rebuildTimer = setTimeout(go, 120); else go();
   }
   function bindObjectInputs() {
@@ -1457,15 +1490,18 @@ void main() {
     state.site.lat = lat; state.site.lon = lon; state.site.name = name || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
     if (moved) {
       if (state.arrays.length || state.objects.length) toast('Moved site: cleared the previous arrays and obstacles.', 'info');
-      state.arrays = []; state.objects = []; state.sel = null; state.shade.profiles = {}; state.shade.useTiles = false; $('#sh-tiles').checked = false;
-      geoms.clear();
+      state.arrays = []; state.objects = []; state.zones = []; state.sel = null; state.shade.profiles = {}; state.shade.useTiles = false; $('#sh-tiles').checked = false;
+      geoms.clear(); state.forecastRes = null; state.yieldRes = null; state.yearWx = null; state.designName = ''; state.designAuto = false;
     }
     $('#site-lat').value = lat.toFixed(6); $('#site-lon').value = lon.toFixed(6);
     setSiteFrame(); rebuildAll(); fillEditors();
     state.site.groundZ = 0;
-    await flyToSite(1.6);
-    if (state.world.src !== 'none') { await waitTiles(8000); state.site.groundZ = await sampleGround(); }
-    renderSiteFacts(); saveSoon();
+    if (state.view !== 'design') {
+      await flyToSite(1.6);
+      if (state.world.src !== 'none') { await waitTiles(8000); state.site.groundZ = await sampleGround(); }
+    } else state.site.groundPending = true;
+    renderSiteFacts(); saveSoon(); designChanged(true);
+    if (window.ArienPlanner) ArienPlanner.siteMoved(moved);
     if (state.wx.mode !== 'csv' && state.wx.connected) loadWeather(true); else if (state.wx.mode === 'csv') { state.wx.series = null; }
   }
   function renderSiteFacts() {
@@ -1477,18 +1513,319 @@ void main() {
   }
   function updateSiteSearchAvailability() {
     const g = state.world.src.startsWith('google');
-    $('#site-search').disabled = g; $('#site-search-go').disabled = g;
-    $('#site-search-note').textContent = g ? 'Place search is off while Google 3D tiles are shown (Google’s terms). Enter coordinates.' : '';
+    $('#site-search-note').textContent = g ? 'Search uses Google’s geocoder while Google 3D tiles are shown, as Google’s terms require.' : 'Place, street address or postcode. Results from postcodes.io and OpenStreetMap.';
   }
+  /** Google geocoder for Google tiles: through Cesium ion, or the Geocoding API on the user's Google key */
+  function googleGeocoder() {
+    try {
+      if (state.world.src === 'google-ion' && state.world.ion && Cesium.IonGeocoderService)
+        return new Cesium.IonGeocoderService({ scene, accessToken: state.world.ion, geocodeProviderType: Cesium.IonGeocodeProviderType.GOOGLE });
+      if (state.world.src === 'google' && state.world.google && Cesium.GoogleGeocoderService) return new Cesium.GoogleGeocoderService({ key: state.world.google });
+    } catch (e) { /* fall through */ }
+    return null;
+  }
+  async function searchPlaces(q) {
+    let google = null;
+    if (state.world.src.startsWith('google')) {
+      const g = googleGeocoder();
+      if (!g) throw new Error('With Google 3D tiles, search needs Google’s geocoder. Enter coordinates instead.');
+      google = async (text) => {
+        let res;
+        try { res = await g.geocode(text); }
+        catch (e) { throw new Error(state.world.src === 'google' ? 'Google’s geocoder refused the request. Enable the Geocoding API on your Google key, or enter coordinates.' : 'Cesium ion’s Google geocoder refused the request: ' + (e.message || e)); }
+        return (res || []).slice(0, 6).map(r => {
+          const d = r.destination;
+          const c = d instanceof Cesium.Rectangle ? Cesium.Rectangle.center(d) : Cesium.Cartographic.fromCartesian(d);
+          const parts = String(r.displayName || '').split(', ');
+          return { name: parts.slice(0, 2).join(', '), detail: parts.slice(2).join(', '), lat: c.latitude * R2D, lon: c.longitude * R2D, source: 'Google', place: parts[0] };
+        });
+      };
+    }
+    return PL.search(q, { google });
+  }
+  const placeResultHtml = (r, i) => `<li><button data-i="${i}">${escapeHtml(r.name)}<small>${escapeHtml([r.detail, r.source].filter(Boolean).join(' · '))} · ${r.lat.toFixed(4)}, ${r.lon.toFixed(4)}</small></button></li>`;
   async function searchPlace() {
     const q = $('#site-search').value.trim(); if (!q) return;
     $('#site-results').innerHTML = '<li class="hint">Searching…</li>';
     try {
-      const res = await WX.geocode(q);
-      if (!res.length) { $('#site-results').innerHTML = '<li class="hint">No places found. Try a town name or postcode area.</li>'; return; }
-      $('#site-results').innerHTML = res.map((r, i) => `<li><button data-i="${i}">${escapeHtml(r.name)}<small>${escapeHtml(r.admin)} · ${r.lat.toFixed(3)}, ${r.lon.toFixed(3)}</small></button></li>`).join('');
-      $('#site-results').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const r = res[+b.dataset.i]; $('#site-results').innerHTML = ''; goToSite(r.lat, r.lon, `${r.name}, ${r.admin}`); };
-    } catch (e) { $('#site-results').innerHTML = '<li class="hint">Could not reach the place search. Check your connection.</li>'; }
+      const { results: res, note } = await searchPlaces(q);
+      if (!res.length) { $('#site-results').innerHTML = `<li class="hint">${escapeHtml(note)}</li>`; return; }
+      $('#site-results').innerHTML = res.map(placeResultHtml).join('');
+      $('#site-results').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; const r = res[+b.dataset.i]; $('#site-results').innerHTML = ''; goToSite(r.lat, r.lon, r.detail && r.source !== 'coordinates' ? `${r.name}, ${r.detail}` : r.name); };
+    } catch (e) { $('#site-results').innerHTML = `<li class="hint">${escapeHtml(e.message || 'Could not reach the place search.')}</li>`; }
+  }
+
+  // ------------------------------------------------------------------ saved sites (named designs, this browser)
+  const storageOk = () => { try { localStorage.setItem('arien-probe', '1'); localStorage.removeItem('arien-probe'); return true; } catch (e) { return false; } };
+  function listSites() { try { return PL.listSites(localStorage); } catch (e) { return []; } }
+  function suggestedName() { return PL.autoName(state.site, state.arrays, PN.arrayKwp, listSites().map(x => x.name)); }
+  function saveNamedSite(name) {
+    if (!storageOk()) { toast('This browser blocks saving. Use World → Save scene to download a file instead.', 'err'); return null; }
+    const typed = String(name || '').trim();
+    const finalName = typed || (state.designName && !state.designAuto ? state.designName : suggestedName());
+    state.designName = finalName; state.designAuto = !typed;
+    const { entry, replaced } = PL.saveSite(localStorage, { name: finalName, snap: sceneSnapshot(), auto: !typed });
+    toast(`${replaced ? 'Updated' : 'Saved'} “${entry.name}” in this browser.`, 'ok');
+    renderSavedSites(); saveSoon();
+    return entry;
+  }
+  function renderSavedSites() {
+    const list = listSites();
+    const html = list.length ? list.map(x => {
+      const n = (x.snap.arrays || []).reduce((t, a) => t + a.rows * a.cols, 0);
+      const d = new Date(x.savedAt);
+      return `<li data-id="${x.id}"><button class="saved-open" data-id="${x.id}">${escapeHtml(x.name)}<small>${n} panel${n === 1 ? '' : 's'} · ${d.getDate()} ${MONTHS[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}</small></button><button class="icon-btn danger saved-del" data-id="${x.id}" title="Delete"><svg><use href="#i-trash"/></svg></button></li>`;
+    }).join('') : '<li class="hint">No saved sites yet.</li>';
+    $$('.saved-list').forEach(el => { el.innerHTML = html; });
+    $$('.site-name-input').forEach(el => { if (document.activeElement !== el) el.value = state.designAuto ? '' : (state.designName || ''); el.placeholder = state.arrays.length || state.site.name ? `Auto: ${suggestedName()}` : 'Auto-named'; });
+  }
+  async function openSnapshot(snap, label) {
+    const src = state.world.src;
+    if (!applySnapshot(snap)) throw new Error('Not an ARIEN scene.');
+    state.world.src = src; // keep the loaded world; items re-settle onto it
+    state.arrays.forEach(a => { a.worldSrc = a.worldSrc || 'none'; }); state.objects.forEach(o => { o.worldSrc = o.worldSrc || 'none'; });
+    setSiteFrame(); geoms.clear(); state.shade.profiles = {}; state.shade.useTiles = false; $('#sh-tiles').checked = false;
+    state.forecastRes = null; state.yieldRes = null; state.yearWx = null;
+    buildModelPane2(); rebuildAll(); if (state.view === 'twin') await flyToSite(1.2);
+    const stale = [...state.arrays, ...state.objects].filter(i => i.worldSrc !== state.world.src); if (stale.length && state.view === 'twin') { await waitTiles(8000); await dropItems(stale); }
+    $('#site-lat').value = state.site.lat.toFixed(6); $('#site-lon').value = state.site.lon.toFixed(6);
+    renderSiteFacts(); renderSavedSites(); designChanged(true); saveScene();
+    toast(`Opened ${label}.`, 'ok');
+    if (state.wx.mode !== 'csv') loadWeather(true);
+  }
+  async function openNamedSite(id) {
+    const x = listSites().find(e => e.id === id); if (!x) return;
+    try { await openSnapshot(x.snap, `“${x.name}”`); state.designName = x.name; state.designAuto = !!x.auto; renderSavedSites(); }
+    catch (e) { toast('Could not open that site: ' + e.message, 'err'); }
+  }
+  function deleteNamedSite(id) { try { PL.removeSite(localStorage, id); } catch (e) { /* ignore */ } renderSavedSites(); }
+
+  // ------------------------------------------------------------------ forecast and yield estimates
+  const totalKwp = () => state.arrays.reduce((t, a) => t + PN.arrayKwp(a), 0);
+  /** Next 7 days with the live model: daily kWh from the forecast run */
+  async function forecastWeek() {
+    if (!state.arrays.length) { toast('Place panels first.', 'warn'); return null; }
+    const isFc = state.wx.series && (state.wx.series.mode === 'forecast' || state.wx.series.mode === 'current') && state.wx.mode === 'forecast';
+    if (!isFc) { wxSetMode('forecast'); const r = await loadWeather(true); if (!r || !r.ok) { toast(r ? r.msg : 'Weather did not load.', 'err'); return null; } }
+    if (!state.run || !state.run.keys.includes(state.live)) await runPeriod(true);
+    const run = state.run; if (!run) return null;
+    const k = state.live, off = utcOffset(), days = new Map();
+    const d0 = new Date(Date.now() + off), today = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate()) - off;
+    run.times.forEach((t, i) => {
+      const d = new Date(t + off), key = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - off;
+      if (key < today) return;
+      days.set(key, (days.get(key) || 0) + run.kw[k][i] * 0.25);
+    });
+    const list = [...days].map(([t, kwh]) => ({ t, kwh })).filter(d => d.t < today + 7 * 86400000);
+    const s = state.wx.series;
+    const res = { kind: 'forecast', model: k, days: list, total: list.reduce((a, b) => a + b.kwh, 0), kwp: totalKwp(), source: s.source, cached: !!s.fromCache, at: Date.now() };
+    state.forecastRes = res; renderResults();
+    return res;
+  }
+  /** Coarser cell grids keep a year of hourly shading quick; energy changes by well under 1% */
+  const coarseArrays = () => state.arrays.map(a => ({ ...a, cellsX: Math.min(a.cellsX, 3), cellsY: Math.min(a.cellsY, 6) }));
+  let yieldBusy = false;
+  /** Estimated yield over the last 12 months of ERA5 weather, hourly, all compared models */
+  async function estimateYield(onProgress) {
+    if (!state.arrays.length) { toast('Place panels first.', 'warn'); return null; }
+    if (yieldBusy) return null;
+    yieldBusy = true; setResultsBusy('Estimating yield: loading 12 months of weather…');
+    try {
+      const ys = await yearWeather();
+      setResultsBusy('Estimating yield: running the physics hour by hour…');
+      const res = await runYield(ys, onProgress);
+      state.yieldRes = res; renderResults();
+      return res;
+    } catch (e) { toast('Yield estimate failed: ' + (e.message || e), 'err', 9000); setResultsBusy(''); return null; }
+    finally { yieldBusy = false; }
+  }
+  async function yearWeather() {
+    let ys = state.yearWx;
+    if (!ys || Math.abs(ys.lat - state.site.lat) > 0.06 || Math.abs(ys.lon - state.site.lon) > 0.06) {
+      ys = await WX.fetchSeries({ mode: 'year', lat: state.site.lat, lon: state.site.lon, apiKey: state.wx.apiKey || '', cacheBase: weatherCacheBase(),
+        onRetry: (n, max, code) => setResultsBusy(`Open-Meteo is busy (HTTP ${code}). Retrying (${n} of ${max})…`) });
+      state.yearWx = ys;
+    }
+    return ys;
+  }
+  /** kWh per kWp for one unshaded panel with these settings, live model, last 12 months (for roof sizing) */
+  async function specificYieldFor(set) {
+    const ys = await yearWeather();
+    const a = defaultArray(0, 0, 0); PN.applyTo(a, set.panelModel || PN.DEFAULT_ID); if (set.landscape) PN.setLandscape(a, true);
+    Object.assign(a, { rows: 1, cols: 1, tilt: set.tilt, azimuth: set.azimuth, cellsX: 1, cellsY: 1 });
+    const r = await runYield(ys, null, { arrays: [a], objects: [], keys: [state.live], quiet: true });
+    return r.specific;
+  }
+  async function runYield(s, onProgress, opt = {}) {
+    const arrs = opt.arrays || coarseArrays(), gs = arrs.map(a => PH.buildArrayGeometry(a)), hz = opt.arrays ? null : horizonFn();
+    const objects = opt.objects || state.objects, quiet = !!opt.quiet;
+    const keys = opt.keys || [state.live, ...LIVE_KEYS.filter(k => state.compare[k] && k !== state.live)];
+    const month = {}, total = {}, unshaded = {}, TsS = {}, TsU = {};
+    keys.forEach(k => { month[k] = new Array(12).fill(0); total[k] = 0; unshaded[k] = 0; TsS[k] = {}; TsU[k] = {}; });
+    const cache = new Map(), nP = gs.reduce((t, g) => t + g.panels.length, 0);
+    const binAz = opt.binAz || (nP > 150 ? 3 : 1.5), binAlt = opt.binAlt || (nP > 150 ? 1.5 : 0.75); // degrees: shading is reused within a bin
+    const off = s.utcOffset * 1000; let lastYield = performance.now(), prevDay = false;
+    const unshadedTrans = [];
+    for (let i = 0; i < s.time.length; i++) {
+      const t = s.time[i] - 1800000; // radiation is the mean of the hour ending at time[i]
+      const w = WX.sample(s, t, state.site.lat, state.site.lon);
+      if (w.sun.alt <= 0.005) { if (prevDay) { keys.forEach(k => { TsS[k] = {}; TsU[k] = {}; }); prevDay = false; } continue; }
+      const sunVec = PH.sunVectorENU(w.sun.alt, w.sun.az);
+      const bk = `${Math.round(w.sun.az * R2D / binAz)}|${Math.round(w.sun.alt * R2D / binAlt)}`;
+      let trans = cache.get(bk);
+      if (!trans) { trans = PH.shadeCells(gs, objects, sunVec, w.sun, hz); cache.set(bk, trans); }
+      const m = new Date(t + off).getUTCMonth();
+      for (const k of keys) {
+        const r1 = computePower(k, w, sunVec, trans, TsS[k], prevDay ? 3600 : null, arrs, gs);
+        const r0 = computePower(k, w, sunVec, unshadedTrans, TsU[k], prevDay ? 3600 : null, arrs, gs);
+        month[k][m] += r1.kw; total[k] += r1.kw; unshaded[k] += r0.kw;
+      }
+      prevDay = true;
+      if (performance.now() - lastYield > 100) { if (onProgress) onProgress(i / s.time.length); if (!quiet) setResultsBusy(`Estimating yield: ${Math.round(i / s.time.length * 100)}%`); await sleep(0); lastYield = performance.now(); }
+    }
+    const k = keys[0], kwp = opt.arrays ? opt.arrays.reduce((t, a) => t + PN.arrayKwp(a), 0) : totalKwp();
+    const days = (s.end - s.start) / 86400000 + 1 / 24;
+    const scale = days > 300 ? 365 / days : 1; // normalise to a full year
+    return { kind: 'yield', model: k, months: month[k].map(v => v * scale), total: total[k] * scale, kwp, specific: kwp ? total[k] * scale / kwp : 0,
+      shadingLoss: unshaded[k] > 0 ? 1 - total[k] / unshaded[k] : 0, perModel: Object.fromEntries(keys.map(x => [x, total[x] * scale])),
+      start: s.start, end: s.end, source: s.source, cached: !!s.fromCache, tiles: !!hz, at: Date.now() };
+  }
+  /** Annual beam-shading loss under clear skies (Kasten, N = 0) on the 21st of each month: quick, for the planner */
+  function quickShadingLoss() {
+    if (!state.arrays.length) return null;
+    const arrs = coarseArrays(), gs = arrs.map(a => PH.buildArrayGeometry(a));
+    const M = PH.MODELS.kasten; let lost = 0, all = 0;
+    const y = new Date().getUTCFullYear(), lonH = state.site.lon / 15;
+    for (let mo = 0; mo < 12; mo++) for (let h = 0; h < 24; h += 1) {
+      const t = Date.UTC(y, mo, 21, h, 30) - lonH * 3600000;
+      const sun = PH.solarPosition(t, state.site.lat, state.site.lon); if (sun.alt <= 0.02) continue;
+      const sunVec = PH.sunVectorENU(sun.alt, sun.az), ctx = { sun, sunVec, N: 0, api: { ghi: 0, dhi: 0, dni: 0 } };
+      const hz = M.horizontal(ctx, state.params);
+      const trans = PH.shadeCells(gs, state.objects, sunVec, sun, horizonFn());
+      gs.forEach((g, ai) => {
+        const tp = M.transpose(hz, ctx, g.n, g.tilt, state.params), tr = trans[ai], a = arrs[ai];
+        const cellA = a.panelW * a.panelL / (a.cellsX * a.cellsY);
+        for (let c = 0; c < tr.length; c++) { const full = tp.beam + tp.diffuse + tp.ground; all += full * cellA; lost += tp.beam * (1 - tr[c]) * cellA; }
+      });
+    }
+    return all > 0 ? lost / all : 0;
+  }
+  let lossTimer = null;
+  function designChanged(now) {
+    if (state.yieldRes) state.yieldRes.stale = true;
+    if (state.forecastRes) state.forecastRes.stale = true;
+    clearTimeout(lossTimer);
+    lossTimer = setTimeout(() => { state.quickLoss = quickShadingLoss(); if (window.ArienPlanner) ArienPlanner.refreshSummary(); renderResults(); }, now ? 0 : 350);
+    if (window.ArienPlanner && state.view === 'design') ArienPlanner.redraw();
+    renderSavedSites();
+  }
+  // result cards (shared by the dashboard and the planner)
+  function barsSvg(vals, labels, color) {
+    const W = 300, H = 92, pad = 16, n = vals.length, max = Math.max(...vals, 0.001), bw = (W - 4) / n;
+    let bars = '';
+    vals.forEach((v, i) => {
+      const h = (H - pad - 12) * v / max, x = 2 + i * bw;
+      bars += `<rect x="${(x + bw * 0.14).toFixed(1)}" y="${(H - pad - h).toFixed(1)}" width="${(bw * 0.72).toFixed(1)}" height="${Math.max(0.5, h).toFixed(1)}" rx="2" fill="${color}"><title>${labels[i]}: ${v.toFixed(1)} kWh</title></rect>`
+        + `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 3}" text-anchor="middle">${labels[i]}</text>`;
+      if (n <= 8) bars += `<text x="${(x + bw / 2).toFixed(1)}" y="${(H - pad - h - 3).toFixed(1)}" text-anchor="middle" class="v">${v >= 100 ? v.toFixed(0) : v.toFixed(1)}</text>`;
+    });
+    return `<svg class="bars" viewBox="0 0 ${W} ${H}" role="img" aria-label="kWh per ${n === 12 ? 'month' : 'day'}">${bars}</svg>`;
+  }
+  function resultsHtml() {
+    let html = '';
+    const f = state.forecastRes, y = state.yieldRes;
+    if (f) {
+      html += `<div class="result-card${f.stale ? ' stale' : ''}"><div class="rc-head"><span class="eyebrow">Forecast · next 7 days</span>${f.stale ? '<span class="badge warn">design changed</span>' : ''}</div>
+        <div class="rc-big"><b>${f.total.toFixed(1)}</b> kWh <small>${(f.total / Math.max(1, f.days.length)).toFixed(1)} kWh a day · ${f.kwp.toFixed(2)} kWp</small></div>
+        ${barsSvg(f.days.map(d => d.kwh), f.days.map(d => DAYS[new Date(d.t + utcOffset()).getUTCDay()]), cssVar('--sun') || '#f3b23c')}
+        <p class="hint">${escapeHtml(modelLabel(f.model))} · ${escapeHtml(f.source)}${f.cached ? ' (site cache)' : ''}.</p></div>`;
+    }
+    if (y) {
+      const per = Object.entries(y.perModel).filter(([k]) => k !== y.model).map(([k, v]) => `${modelShort(k)} ${Math.round(v).toLocaleString()}`).join(' · ');
+      html += `<div class="result-card${y.stale ? ' stale' : ''}"><div class="rc-head"><span class="eyebrow">Estimated yield · a year</span>${y.stale ? '<span class="badge warn">design changed</span>' : ''}</div>
+        <div class="rc-big"><b>${Math.round(y.total).toLocaleString()}</b> kWh <small>${Math.round(y.specific).toLocaleString()} kWh/kWp · shading loss ${(y.shadingLoss * 100).toFixed(1)}%</small></div>
+        ${barsSvg(y.months, MONTHS.map(m => m[0]), cssVar('--sky') || '#6cc3e8')}
+        <p class="hint">${escapeHtml(modelLabel(y.model))} on ${escapeHtml(y.source)}, ${fmtDay(y.start)} ${new Date(y.start).getUTCFullYear()} – ${fmtDay(y.end)} ${new Date(y.end).getUTCFullYear()}${y.cached ? ' (site cache)' : ''}, hourly.${per ? ' Other models: ' + escapeHtml(per) + ' kWh.' : ''}${y.tiles ? ' Includes the 3D-tile skyline.' : ' Shading from placed obstacles and panel rows; trace the skyline in the 3D twin to add buildings from the tiles.'} No inverter, cable or soiling losses.</p></div>`;
+    }
+    return html;
+  }
+  let busyMsg = '';
+  function setResultsBusy(msg) { busyMsg = msg; renderResults(); }
+  function renderResults() {
+    const html = (busyMsg ? `<div class="result-card busy"><span class="spinner"></span>${escapeHtml(busyMsg)}</div>` : '') + resultsHtml();
+    $$('.results-slot').forEach(el => { el.innerHTML = html; el.hidden = !html; });
+  }
+  async function runForecastUi() { setResultsBusy('Forecasting the next 7 days…'); try { const r = await forecastWeek(); return r; } finally { setResultsBusy(''); } }
+  async function runYieldUi() { const r = await estimateYield(); setResultsBusy(''); return r; }
+
+  // ------------------------------------------------------------------ views: Design (2D planner) and the 3D twin
+  function setView(v) {
+    if (v === state.view) return;
+    state.view = v;
+    document.body.classList.toggle('view-design', v === 'design');
+    $('#planner').hidden = v !== 'design';
+    $$('#rail button[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === v)));
+    if (v === 'design') {
+      closeDrawer(); toggleDash(false); stopPlacing();
+      if (viewer) viewer.useDefaultRenderLoop = false; // the globe is hidden: save the GPU
+      if (window.ArienPlanner) ArienPlanner.show();
+      if (location.hash !== '#design') history.replaceState(null, '', '#design');
+    } else {
+      if (viewer) { viewer.useDefaultRenderLoop = true; viewer.resize(); }
+      if (state.site.groundPending && viewer) state.siteSettle = settleSite();
+      if (location.hash === '#design') history.replaceState(null, '', location.pathname + location.search);
+    }
+  }
+  /** After the site moved in the planner: fly there and read the ground height */
+  async function settleSite() {
+    await flyToSite(1.4);
+    if (state.world.src !== 'none') { await waitTiles(9000); state.site.groundZ = await sampleGround(); }
+    state.site.groundPending = false; state.siteSettle = null; renderSiteFacts();
+  }
+  /** Planner → twin: settle new panels and obstacles onto the 3D surface, then simulate */
+  async function simulateDesign() {
+    setView('twin');
+    const fresh = [...state.arrays, ...state.objects].filter(i => i.fromPlanner);
+    if (state.siteSettle) await state.siteSettle; else await flyToSite(1.4);
+    if (state.world.src !== 'none' && fresh.length) {
+      // panels and chimneys sit on whatever is under them (roofs); trees, hedges, walls and buildings stand on the ground,
+      // since photorealistic tiles include the real tree canopies a drop would land on
+      const onSurface = fresh.filter(i => !i.type || i.type === 'chimney'), onGround = fresh.filter(i => i.type && i.type !== 'chimney');
+      onGround.forEach(o => { o.z = state.site.groundZ; o.worldSrc = state.world.src; });
+      await waitTiles(9000); await dropItems(onSurface);
+    } else if (fresh.length) { rebuildAll(); } // map only: keep the planner heights (flush rows climb the roof plane)
+    fresh.forEach(i => { delete i.fromPlanner; });
+    if (!state.wx.series) await loadWeather(true); else { simulateNow(true); await runPeriod(true); }
+    if (state.run) toggleDash(true);
+  }
+  function plannerApi() {
+    return {
+      state, PH, PN, PL, toast, escapeHtml, compass, fmt, panelOptionsHtml,
+      newArray(spec) {
+        const a = defaultArray(spec.x, spec.y, spec.z || 0);
+        PN.applyTo(a, spec.panelModel || PN.DEFAULT_ID);
+        if (spec.landscape) PN.setLandscape(a, true);
+        Object.assign(a, { tilt: spec.tilt, azimuth: spec.azimuth, rows: spec.rows || 1, cols: spec.cols || 1, rowPitch: spec.rowPitch || a.rowPitch,
+          colGap: spec.colGap ?? a.colGap, mountHeight: spec.mountHeight ?? a.mountHeight, zone: spec.zone || null, fromPlanner: true, worldSrc: 'none' });
+        if (spec.name) a.name = spec.name;
+        state.arrays.push(a); if (scene) buildArrayPrimitive(a);
+        return a;
+      },
+      updateArray(a) { if (scene) buildArrayPrimitive(a); clearProfiles(a); },
+      removeArray(id) {
+        const r = arrayPrims.get(id); if (r && scene) { scene.primitives.remove(r.prim); if (r.low) scene.primitives.remove(r.low); }
+        arrayPrims.delete(id); geoms.delete(id); delete state.shade.profiles[id]; state.arrays = state.arrays.filter(a => a.id !== id);
+        if (state.sel && state.sel.id === id) state.sel = null;
+      },
+      newObject(type, x, y) { const o = defaultObject(type, x, y, 0); o.fromPlanner = true; o.worldSrc = 'none'; state.objects.push(o); if (scene) buildObjectModel(o); return o; },
+      updateObject(o, rebuild) { if (!scene) return; if (rebuild) rebuildObjectSoon(o); else updateObjectMatrix(o); },
+      removeObject(id) { if (scene) removeObjectModel(id); state.objects = state.objects.filter(o => o.id !== id); if (state.sel && state.sel.id === id) state.sel = null; },
+      changed() { state.shade.dirty = true; state.run = null; geoms.clear(); refreshLists(); fillEditors(); saveSoon(); if (viewer && state.wx.series) simulateNow(true); designChanged(); },
+      goToSite, searchPlaces, suggestedName, saveSite: saveNamedSite, listSites, openSite: openNamedSite, deleteSite: deleteNamedSite,
+      forecast: runForecastUi, estimateYield: runYieldUi, simulate: simulateDesign, openTwin: () => setView('twin'), totalKwp,
+      specificYield: specificYieldFor,
+      quickLoss: () => state.quickLoss, renderSavedSites, renderResults
+    };
   }
 
   // ------------------------------------------------------------------ time controls
@@ -1520,7 +1857,21 @@ void main() {
   // ------------------------------------------------------------------ wiring
   let wxSetMode = () => {};
   function wire() {
-    $('#rail').addEventListener('click', (e) => { const b = e.target.closest('button[data-panel]'); if (!b) return; if (state.openPane === b.dataset.panel && !$('#drawer').hidden) closeDrawer(); else openDrawer(b.dataset.panel); });
+    $('#rail').addEventListener('click', (e) => {
+      const v = e.target.closest('button[data-view]');
+      if (v) { setView(state.view === 'design' ? 'twin' : 'design'); return; }
+      const b = e.target.closest('button[data-panel]'); if (!b) return;
+      if (state.view === 'design') setView('twin');
+      if (state.openPane === b.dataset.panel && !$('#drawer').hidden) closeDrawer(); else openDrawer(b.dataset.panel);
+    });
+    $('#btn-forecast').addEventListener('click', async () => { if (await runForecastUi()) toggleDash(true); });
+    $('#btn-yield').addEventListener('click', async () => { toggleDash(true); await runYieldUi(); });
+    $('#site-save').addEventListener('click', () => saveNamedSite($('#site-name').value));
+    $('#site-name').addEventListener('keydown', (e) => { if (e.key === 'Enter') saveNamedSite(e.target.value); });
+    document.addEventListener('click', (e) => {
+      const o = e.target.closest('.saved-list .saved-open'); if (o) { openNamedSite(o.dataset.id); return; }
+      const d = e.target.closest('.saved-list .saved-del'); if (d) deleteNamedSite(d.dataset.id);
+    });
     $('#drawer-close').addEventListener('click', closeDrawer);
     $('#dash-close').addEventListener('click', () => toggleDash(false));
     $('#btn-dash').addEventListener('click', () => toggleDash());
@@ -1633,18 +1984,8 @@ void main() {
     $('#scene-save').addEventListener('click', () => download(`arien-scene-${(state.site.name || 'site').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.json`, JSON.stringify(sceneSnapshot(), null, 2), 'application/json'));
     $('#scene-open').addEventListener('change', async (e) => {
       const f = e.target.files[0]; if (!f) return;
-      try {
-        const snap = JSON.parse(await f.text());
-        const src = state.world.src;
-        if (!applySnapshot(snap)) throw new Error('Not an ARIEN scene file.');
-        state.world.src = src; // keep the loaded world; items re-settle onto it
-        state.arrays.forEach(a => { a.worldSrc = a.worldSrc || 'none'; }); state.objects.forEach(o => { o.worldSrc = o.worldSrc || 'none'; });
-        setSiteFrame(); geoms.clear(); state.shade.profiles = {}; state.shade.useTiles = false;
-        buildModelPane2(); rebuildAll(); await flyToSite(1.2);
-        const stale = [...state.arrays, ...state.objects].filter(i => i.worldSrc !== state.world.src); if (stale.length) { await waitTiles(8000); await dropItems(stale); }
-        $('#site-lat').value = state.site.lat.toFixed(6); $('#site-lon').value = state.site.lon.toFixed(6);
-        toast('Scene opened.', 'ok'); saveScene(); loadWeather(true);
-      } catch (err) { toast('Could not open the scene: ' + err.message, 'err'); }
+      try { await openSnapshot(JSON.parse(await f.text()), 'the scene file'); }
+      catch (err) { toast('Could not open the scene: ' + err.message, 'err'); }
       e.target.value = '';
     });
 
@@ -1889,9 +2230,14 @@ void main() {
     state.firstRun = !had && !(siteConfig && siteConfig.scene);
     if (!had && !(siteConfig && siteConfig.scene)) demoScene();
     $('#site-lat').value = state.site.lat.toFixed(6); $('#site-lon').value = state.site.lon.toFixed(6);
-    wire(); initSetup(); initAdmin(); buildModelPane2(); renderSiteFacts();
+    wire(); initSetup(); initAdmin(); buildModelPane2(); renderSiteFacts(); updateSiteSearchAvailability();
+    if (window.ArienPlanner) ArienPlanner.init(plannerApi());
+    renderSavedSites(); renderResults();
+    if (location.hash === '#design') { const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); setView('design'); } }, 300); }
     if (location.hash === '#admin') { const go = () => openDrawer('admin'); const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); go(); } }, 400); }
-    window.__arien = { state, viewer: () => viewer, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef,
+    window.__arien = { state, viewer: () => viewer, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef, setView, forecastWeek, estimateYield,
+      quickShadingLoss, saveNamedSite, listSites, openNamedSite, searchPlaces, suggestedName,
+      yieldDebug: async (o) => runYield(await yearWeather(), null, { quiet: true, ...o, arrays: o.full ? state.arrays.map(a => ({ ...a })) : coarseArrays() }),
       lodOf: (id) => { const r = objModels.get(id); return r ? (r.kind === 'lod' ? r.cur : 'fallback') : 'none'; },
       placeObjects: (list) => { list.forEach(({ type, x, y, z }) => { const o = defaultObject(type, x, y, z); state.objects.push(o); buildObjectModel(o); }); refreshLists(); state.shade.dirty = true; } };
     const emb = embeddedIn();
