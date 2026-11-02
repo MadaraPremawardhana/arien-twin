@@ -130,6 +130,10 @@ with sync_playwright() as p:
     check('clear empties the design', page.evaluate('() => __arien.state.arrays.length') == 0)
     page.click('.pl-left .saved-list .saved-open >> text=London test roof'); time.sleep(2.5)
     check('saved site reopens with its panels', page.evaluate('() => __arien.state.arrays.reduce((t, a) => t + a.rows * a.cols, 0)') == 10 and 'London' in page.evaluate('() => __arien.state.site.name'))
+    # flush rows stay on one roof plane after a drop onto flat ground
+    planes = page.evaluate('''async () => { await __arien.dropAll(); const rows = __arien.state.arrays.filter(a => a.planeRow != null).sort((a, b) => a.planeRow - b.planeRow);
+        return rows.map(a => [a.planeRow, +a.z.toFixed(3), +(a.rowPitch * Math.tan(a.tilt * Math.PI / 180)).toFixed(3)]); }''')
+    check('flush rows keep their roof plane after dropping', len(planes) >= 2 and all(abs(z - (r - planes[0][0]) * rise - planes[0][1]) < 1e-3 for r, z, rise in planes), json.dumps(planes))
     # simulate in 3D
     page.click('#pl-sim'); time.sleep(6)
     tw = page.evaluate('() => ({ view: __arien.state.view, run: !!__arien.state.run, dash: !document.getElementById("dash").hidden, fresh: __arien.state.arrays.filter(a => a.fromPlanner).length })')

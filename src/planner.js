@@ -98,7 +98,7 @@
     // flush rows lie on one roof plane: each row back from the front sits higher by pitch × tan(tilt),
     // so rows do not shade each other (racked rows on a flat roof all start at the same height)
     const rise = z.mount === 'flush' ? pitch * Math.tan(z.tilt * D2R) : 0;
-    runs.forEach((rn, i) => api.newArray({ x: rn.x, y: rn.y, z: rn.row * rise, planeRow: rn.row, tilt: z.tilt, azimuth: z.azimuth, rows: 1, cols: rn.cols, rowPitch: pitchFor(z, L), colGap: z.colGap,
+    runs.forEach((rn, i) => api.newArray({ x: rn.x, y: rn.y, z: rn.row * rise, planeRow: z.mount === 'flush' ? rn.row : null, tilt: z.tilt, azimuth: z.azimuth, rows: 1, cols: rn.cols, rowPitch: pitchFor(z, L), colGap: z.colGap,
       mountHeight: z.mountHeight, panelModel: z.panelModel, landscape: z.landscape, zone: z.id, name: `${z.name} · row ${rn.row + 1}${runs.filter(x => x.row === rn.row).length > 1 ? String.fromCharCode(97 + runs.filter((x, j) => x.row === rn.row && j < i).length) : ''}` }));
     return runs.reduce((t, r) => t + r.cols, 0);
   }

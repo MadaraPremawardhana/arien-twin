@@ -293,7 +293,7 @@
       setStatus('#w-status', worldLabel() + ' loaded.', 'ok');
     } else {
       const stale = [...state.arrays, ...state.objects].filter(i => i.worldSrc !== 'none');
-      stale.forEach(i => { i.z = 0; i.worldSrc = 'none'; });
+      stale.forEach(i => { i.z = 0; i.worldSrc = 'none'; }); keepRoofPlanes(stale);
       if (stale.length) rebuildAll();
       setStatus('#w-status', 'Map-only world loaded. Add a key to see buildings and terrain.', '');
     }
@@ -310,8 +310,18 @@
     return ex;
   }
   /** Drop items onto whatever surface is under them (3D tiles or terrain) */
+  /** Flush rows from the planner lie on one roof plane: never let a drop put a back row below that plane */
+  function keepRoofPlanes(items) {
+    const zones = new Map();
+    items.filter(a => a.zone && a.planeRow != null).forEach(a => { if (!zones.has(a.zone)) zones.set(a.zone, []); zones.get(a.zone).push(a); });
+    zones.forEach(rows => {
+      const z0 = Math.min(...rows.filter(a => a.planeRow === Math.min(...rows.map(r => r.planeRow))).map(a => a.z));
+      const r0 = Math.min(...rows.map(r => r.planeRow));
+      rows.forEach(a => { a.z = Math.max(a.z, z0 + (a.planeRow - r0) * a.rowPitch * Math.tan(a.tilt * D2R)); });
+    });
+  }
   async function dropItems(items) {
-    if (state.world.src === 'none') { items.forEach(i => { i.z = 0; i.worldSrc = 'none'; }); rebuildAll(); return; }
+    if (state.world.src === 'none') { items.forEach(i => { i.z = 0; i.worldSrc = 'none'; }); keepRoofPlanes(items); rebuildAll(); return; }
     const ex = excludeList();
     for (const it of items) {
       const top = Math.max(it.z, state.site.groundZ) + 400;
@@ -323,6 +333,7 @@
       else it.z = state.site.groundZ;
       it.worldSrc = state.world.src;
     }
+    keepRoofPlanes(items);
     rebuildAll(); state.shade.dirty = true; clearProfiles(); saveSoon();
   }
 
@@ -1810,6 +1821,7 @@ void main() {
         if (spec.landscape) PN.setLandscape(a, true);
         Object.assign(a, { tilt: spec.tilt, azimuth: spec.azimuth, rows: spec.rows || 1, cols: spec.cols || 1, rowPitch: spec.rowPitch || a.rowPitch,
           colGap: spec.colGap ?? a.colGap, mountHeight: spec.mountHeight ?? a.mountHeight, zone: spec.zone || null, fromPlanner: true, worldSrc: 'none' });
+        if (spec.planeRow != null) a.planeRow = spec.planeRow;
         if (spec.name) a.name = spec.name;
         state.arrays.push(a); if (scene) buildArrayPrimitive(a);
         return a;
@@ -2116,9 +2128,16 @@ void main() {
     catch (e) { return null; }
   }
   /** Apply the published config on top of anything stored locally */
-  function applySiteConfig(c) {
-    if (c.scene) applySnapshot({ v: 1, site: c.site, ...c.scene });
-    else if (c.site) Object.assign(state.site, c.site);
+  /** Published settings. The site and scene apply to new visitors, and once to returning visitors each time
+      the administrator publishes again; otherwise a visitor's own saved layout is kept. */
+  function applySiteConfig(c, hadOwnScene) {
+    let seen = null; try { seen = localStorage.getItem('arien-twin-config-seen'); } catch (e) { /* ignore */ }
+    const fresh = !hadOwnScene || (c.updated && c.updated !== seen);
+    if (fresh) {
+      if (c.scene) applySnapshot({ v: 1, site: c.site, ...c.scene });
+      else if (c.site && !hadOwnScene) Object.assign(state.site, c.site);
+      try { if (c.updated) localStorage.setItem('arien-twin-config-seen', c.updated); } catch (e) { /* ignore */ }
+    }
     if (c.world) {
       if (c.world.src) state.world.src = c.world.src;
       if (c.world.ionToken) state.world.ion = c.world.ionToken;
@@ -2229,7 +2248,7 @@ void main() {
     }
     const had = loadStored();
     siteConfig = await fetchSiteConfig();
-    if (siteConfig) applySiteConfig(siteConfig);
+    if (siteConfig) applySiteConfig(siteConfig, had);
     state.firstRun = !had && !(siteConfig && siteConfig.scene);
     if (!had && !(siteConfig && siteConfig.scene)) demoScene();
     $('#site-lat').value = state.site.lat.toFixed(6); $('#site-lon').value = state.site.lon.toFixed(6);
@@ -2240,6 +2259,7 @@ void main() {
     if (location.hash === '#admin') { const go = () => openDrawer('admin'); const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); go(); } }, 400); }
     window.__arien = { state, viewer: () => viewer, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef, setView, forecastWeek, estimateYield,
       quickShadingLoss, saveNamedSite, listSites, openNamedSite, searchPlaces, suggestedName,
+      dropAll: () => dropItems([...state.arrays]),
       yieldDebug: async (o) => runYield(await yearWeather(), null, { quiet: true, ...o, arrays: o.full ? state.arrays.map(a => ({ ...a })) : coarseArrays() }),
       lodOf: (id) => { const r = objModels.get(id); return r ? (r.kind === 'lod' ? r.cur : 'fallback') : 'none'; },
       placeObjects: (list) => { list.forEach(({ type, x, y, z }) => { const o = defaultObject(type, x, y, z); state.objects.push(o); buildObjectModel(o); }); refreshLists(); state.shade.dirty = true; } };
