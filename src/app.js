@@ -9,6 +9,9 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const nextFrame = () => new Promise(r => requestAnimationFrame(() => r()));
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+  // Let the page breathe during long runs. A message-channel hop is not throttled in background tabs,
+  // where Chrome slows chained timers to about one a minute.
+  const breathe = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => { c.port1.close(); r(); }; c.port2.postMessage(0); });
 
   const DEFAULT_SITE = { name: 'Buckingham, UK', lat: 51.99564350977578, lon: -0.9906258867252853 };
   const LIVE_KEYS = ['rwghi', 'hdkr', 'karamov', 'kasten', 'balint', 'seasonal'];
@@ -805,7 +808,7 @@
         const r = computePower(k, w, sunVec, trans, Ts[k], i === 0 ? null : step / 1000);
         out.kw[k].push(r.kw); out.poa[k].push(r.poa); out.tcell[k].push(r.tcell);
       }
-      if (performance.now() - lastYield > 120) { btn.lastChild.textContent = ` ${Math.round(i / nSteps * 100)}%`; await sleep(0); lastYield = performance.now(); }
+      if (performance.now() - lastYield > 120) { btn.lastChild.textContent = ` ${Math.round(i / nSteps * 100)}%`; await breathe(); lastYield = performance.now(); }
     }
     out.energy = {}; out.peak = {};
     keys.forEach(k => { out.energy[k] = out.kw[k].reduce((a, b) => a + b, 0) * 0.25; out.peak[k] = Math.max(...out.kw[k]); });
@@ -1681,7 +1684,7 @@ void main() {
         month[k][m] += r1.kw; total[k] += r1.kw; unshaded[k] += r0.kw;
       }
       prevDay = true;
-      if (performance.now() - lastYield > 100) { if (onProgress) onProgress(i / s.time.length); if (!quiet) setResultsBusy(`Estimating yield: ${Math.round(i / s.time.length * 100)}%`); await sleep(0); lastYield = performance.now(); }
+      if (performance.now() - lastYield > 100) { if (onProgress) onProgress(i / s.time.length); if (!quiet) setResultsBusy(`Estimating yield: ${Math.round(i / s.time.length * 100)}%`); await breathe(); lastYield = performance.now(); }
     }
     const k = keys[0], kwp = opt.arrays ? opt.arrays.reduce((t, a) => t + PN.arrayKwp(a), 0) : totalKwp();
     const days = (s.end - s.start) / 86400000 + 1 / 24;
