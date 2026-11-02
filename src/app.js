@@ -40,7 +40,6 @@
   let viewer = null, scene = null, siteM = null, siteMinv = null, tileset = null, handler = null, cloudStage = null;
   const arrayPrims = new Map(); // id -> {prim, simplified}
   const objModels = new Map();  // id -> primitive/model
-  const glbUrls = {};
   let chart = null;
   const vis = { wind: [0, 0], flash: 0, lastReal: performance.now(), lastSimT: null };
 
@@ -299,8 +298,8 @@
 
   function excludeList() {
     const ex = [];
-    arrayPrims.forEach(v => ex.push(v.prim));
-    objModels.forEach(m => ex.push(m));
+    arrayPrims.forEach(v => { ex.push(v.prim); if (v.low) ex.push(v.low); });
+    objModels.forEach(rec => { if (rec.kind === 'fallback') ex.push(rec.prim); else rec.models.forEach(m => m && ex.push(m)); });
     return ex;
   }
   /** Drop items onto whatever surface is under them (3D tiles or terrain) */
@@ -329,7 +328,7 @@
 
   function buildArrayPrimitive(a) {
     const old = arrayPrims.get(a.id);
-    if (old) { scene.primitives.remove(old.prim); arrayPrims.delete(a.id); }
+    if (old) { scene.primitives.remove(old.prim); if (old.low) scene.primitives.remove(old.low); arrayPrims.delete(a.id); }
     const g = geomFor(a);
     const total = state.arrays.reduce((s, x) => s + cellCount(x), 0);
     const simplified = total > MAX_RENDER_CELLS;
@@ -369,7 +368,15 @@
       shadows: Cesium.ShadowMode.ENABLED, asynchronous: true
     });
     scene.primitives.add(prim);
-    arrayPrims.set(a.id, { prim, simplified });
+    // far level of detail: one dark box per panel, swapped in beyond ~200 m
+    let low = null;
+    if (!simplified) {
+      const lowGeo = Cesium.BoxGeometry.fromDimensions({ dimensions: new Cesium.Cartesian3(a.panelW + 0.03, a.panelL + 0.03, 0.04), vertexFormat: vf });
+      const li = g.panels.map((p, pi) => new Cesium.GeometryInstance({ geometry: lowGeo, modelMatrix: localMatrix(p.c, [-p.u[0], -p.u[1], -p.u[2]], p.v, p.n), id: `arr:${a.id}:p${pi}`, attributes: { color: cc } }));
+      low = new Cesium.Primitive({ geometryInstances: li, appearance: new Cesium.PerInstanceColorAppearance({ closed: true }), shadows: Cesium.ShadowMode.ENABLED, asynchronous: true, show: false });
+      scene.primitives.add(low);
+    }
+    arrayPrims.set(a.id, { prim, low, simplified, near: true });
     waitReady(prim).then(() => paintCells());
   }
   async function waitReady(prim) { for (let i = 0; i < 300 && !prim.ready; i++) await nextFrame(); }
@@ -403,72 +410,15 @@
     });
   }
 
-  // ------------------------------------------------------------------ obstacles: three.js models
-  function buildThreeGroup(type) {
-    const T = window.THREE; const g = new T.Group();
-    let seed = { tree: 7, conifer: 11, hedge: 3, wall: 5, chimney: 9, building: 13, pole: 17 }[type] || 1;
-    const rnd = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
-    const mat = (hex, rough = 0.88) => new T.MeshStandardMaterial({ color: hex, roughness: rough, metalness: 0, flatShading: true });
-    const add = (geo, m, x, y, z, sx = 1, sy = 1, sz = 1) => {
-      const ng = geo.index ? geo.toNonIndexed() : geo; ng.computeVertexNormals();
-      const mesh = new T.Mesh(ng, m); mesh.position.set(x, y, z); mesh.scale.set(sx, sy, sz); g.add(mesh);
-    };
-    switch (type) {
-      case 'tree': {
-        add(new T.CylinderGeometry(0.035, 0.055, 0.44, 7), mat('#6b4a2f'), 0, 0.22, 0);
-        add(new T.IcosahedronGeometry(1, 1), mat('#3f6b2e'), 0, 0.62, 0, 0.44, 0.34, 0.44);
-        const greens = ['#4b7a35', '#36602a', '#56853c', '#2f5a26'];
-        for (let i = 0; i < 7; i++) {
-          const a = i / 7 * Math.PI * 2 + rnd() * 0.5, r = 0.26 + rnd() * 0.06;
-          add(new T.IcosahedronGeometry(1, 0), mat(greens[i % 4]), Math.cos(a) * r, 0.58 + (rnd() - 0.4) * 0.24, Math.sin(a) * r, 0.2, 0.17, 0.2);
-        }
-        add(new T.IcosahedronGeometry(1, 0), mat('#4b7a35'), 0, 0.86, 0, 0.24, 0.13, 0.24);
-        break;
-      }
-      case 'conifer': {
-        add(new T.CylinderGeometry(0.04, 0.06, 0.16, 6), mat('#5c4029'), 0, 0.08, 0);
-        add(new T.ConeGeometry(0.5, 0.42, 9), mat('#2f5a3a'), 0, 0.12 + 0.21, 0);
-        add(new T.ConeGeometry(0.39, 0.38, 9), mat('#2a5134'), 0, 0.42 + 0.19, 0);
-        add(new T.ConeGeometry(0.26, 0.4, 9), mat('#24482e'), 0, 0.8, 0);
-        break;
-      }
-      case 'hedge': {
-        const geo = new T.BoxGeometry(1, 1, 1, 6, 3, 2).toNonIndexed();
-        const pos = geo.attributes.position;
-        for (let i = 0; i < pos.count; i++) { const y = pos.getY(i); if (y > 0.4) pos.setY(i, y + (rnd() - 0.5) * 0.12); }
-        add(geo, mat('#3d6630'), 0, 0.5, 0);
-        break;
-      }
-      case 'wall': add(new T.BoxGeometry(1, 1, 1), mat('#b9ad98', 0.95), 0, 0.5, 0); break;
-      case 'chimney':
-        add(new T.BoxGeometry(0.9, 0.9, 0.9), mat('#8a4b3a', 0.95), 0, 0.45, 0);
-        add(new T.BoxGeometry(1, 0.1, 1), mat('#6f7275'), 0, 0.95, 0); break;
-      case 'building':
-        add(new T.BoxGeometry(1, 0.92, 1), mat('#c9c2b6', 0.9), 0, 0.46, 0);
-        add(new T.BoxGeometry(1.02, 0.08, 1.02), mat('#56626b'), 0, 0.96, 0); break;
-      case 'pole': add(new T.CylinderGeometry(0.5, 0.5, 1, 10), mat('#7a5c3e'), 0, 0.5, 0); break;
-    }
-    return g;
-  }
-  async function glbUrl(type) {
-    if (glbUrls[type] !== undefined) return glbUrls[type];
-    if (!window.THREE || !THREE.GLTFExporter) { glbUrls[type] = null; return null; }
-    try {
-      const group = buildThreeGroup(type);
-      const buf = await new Promise((res, rej) => new THREE.GLTFExporter().parse(group, res, rej, { binary: true }));
-      glbUrls[type] = URL.createObjectURL(new Blob([buf], { type: 'model/gltf-binary' }));
-    } catch (e) { console.warn('three.js model export failed', e); glbUrls[type] = null; }
-    return glbUrls[type];
-  }
-  function objMatrix(o) {
+  // ------------------------------------------------------------------ obstacles: real-size models with three levels of detail
+  function objMatrix(o, unitScale) {
     const t = Cesium.Matrix4.fromTranslation(new Cesium.Cartesian3(o.x, o.y, o.z));
     const r = Cesium.Matrix4.fromRotationTranslation(Cesium.Matrix3.fromRotationZ(-o.heading * D2R));
-    const s = Cesium.Matrix4.fromScale(new Cesium.Cartesian3(o.dims.length, o.dims.width ?? o.dims.length, o.dims.height));
     const m = Cesium.Matrix4.multiply(t, r, new Cesium.Matrix4());
-    Cesium.Matrix4.multiply(m, s, m);
+    if (unitScale) Cesium.Matrix4.multiply(m, Cesium.Matrix4.fromScale(new Cesium.Cartesian3(o.dims.length, o.dims.width ?? o.dims.length, o.dims.height)), m);
     return Cesium.Matrix4.multiply(siteM, m, m);
   }
-  /** Fallback when three.js is unavailable: Cesium primitives in the same unit space */
+  /** Fallback when three.js is unavailable: Cesium primitives in unit space, scaled to the object */
   function fallbackPrimitive(o) {
     const vf = Cesium.PerInstanceColorAppearance.VERTEX_FORMAT, I = [], col = (h) => Cesium.ColorGeometryInstanceAttribute.fromColor(Cesium.Color.fromCssColorString(h));
     const at = (x, y, z) => Cesium.Matrix4.fromTranslation(new Cesium.Cartesian3(x, y, z));
@@ -484,27 +434,73 @@
       case 'building': box(1, 1, 1, 0.5, '#c9c2b6'); break;
       default: box(1, 1, 1, 0.5, '#b9ad98');
     }
-    return new Cesium.Primitive({ geometryInstances: I, appearance: new Cesium.PerInstanceColorAppearance({ closed: true }), modelMatrix: objMatrix(o), shadows: Cesium.ShadowMode.ENABLED });
+    return new Cesium.Primitive({ geometryInstances: I, appearance: new Cesium.PerInstanceColorAppearance({ closed: true }), modelMatrix: objMatrix(o, true), shadows: Cesium.ShadowMode.ENABLED });
+  }
+  const LOD_NEAR = 0.2, LOD_FAR = 0.04; // angular size (object size / distance) where models switch
+  async function loadLod(o, rec, lod) {
+    if (rec.models[lod] || rec.loading[lod] || rec.dead) return;
+    rec.loading[lod] = true;
+    try {
+      const url = await ArienModels.glbUrl(o.type, o.dims, lod);
+      if (rec.dead) return;
+      const m = await Cesium.Model.fromGltfAsync({ url, modelMatrix: objMatrix(o), shadows: Cesium.ShadowMode.ENABLED, id: 'obj:' + o.id });
+      if (rec.dead || !scene) return;
+      scene.primitives.add(m); rec.models[lod] = m;
+    } catch (e) { console.warn(`Could not build the ${o.type} model (detail ${lod})`, e); rec.failed[lod] = true; }
+    finally { rec.loading[lod] = false; }
   }
   async function buildObjectModel(o) {
-    const old = objModels.get(o.id);
-    if (old) { scene.primitives.remove(old); objModels.delete(o.id); }
-    const url = await glbUrl(o.type);
-    let prim;
-    if (url) {
-      try { prim = await Cesium.Model.fromGltfAsync({ url, modelMatrix: objMatrix(o), shadows: Cesium.ShadowMode.ENABLED, id: 'obj:' + o.id }); }
-      catch (e) { console.warn('model load failed', e); prim = fallbackPrimitive(o); }
-    } else prim = fallbackPrimitive(o);
-    if (!state.objects.includes(o)) return; // removed while loading
-    const prev = objModels.get(o.id); if (prev) scene.primitives.remove(prev);
-    scene.primitives.add(prim); objModels.set(o.id, prim);
+    removeObjectModel(o.id);
+    if (!window.ArienModels || !ArienModels.available()) { const p = fallbackPrimitive(o); scene.primitives.add(p); objModels.set(o.id, { kind: 'fallback', prim: p }); return; }
+    const rec = { kind: 'lod', models: [null, null, null], loading: [false, false, false], failed: [false, false, false], cur: -1 };
+    objModels.set(o.id, rec);
+    await loadLod(o, rec, 2);
+    if (rec.failed[2]) { removeObjectModel(o.id); const p = fallbackPrimitive(o); scene.primitives.add(p); objModels.set(o.id, { kind: 'fallback', prim: p }); return; }
+    loadLod(o, rec, 1);
   }
-  function updateObjectMatrix(o) { const m = objModels.get(o.id); if (m) m.modelMatrix = objMatrix(o); }
+  function removeObjectModel(id) {
+    const rec = objModels.get(id); if (!rec) return;
+    rec.dead = true;
+    if (rec.kind === 'fallback') scene.primitives.remove(rec.prim); else rec.models.forEach(m => m && scene.primitives.remove(m));
+    objModels.delete(id);
+  }
+  function updateObjectMatrix(o) {
+    const rec = objModels.get(o.id); if (!rec) return;
+    if (rec.kind === 'fallback') rec.prim.modelMatrix = objMatrix(o, true);
+    else rec.models.forEach(m => { if (m) m.modelMatrix = objMatrix(o); });
+  }
+  let rebuildObjTimer = null;
+  function rebuildObjectSoon(o) { clearTimeout(rebuildObjTimer); rebuildObjTimer = setTimeout(() => buildObjectModel(o), 250); }
+  /** Pick each object's level of detail from its on-screen size; arrays switch to panel boxes when far */
+  function updateLods() {
+    if (!viewer || !siteM) return;
+    const cam = viewer.camera.positionWC;
+    for (const o of state.objects) {
+      const rec = objModels.get(o.id); if (!rec || rec.kind !== 'lod') continue;
+      const size = Math.max(o.dims.length, o.dims.width ?? o.dims.length, o.dims.height);
+      const dist = Math.max(0.5, Cesium.Cartesian3.distance(cam, enu2ecef(o.x, o.y, o.z + o.dims.height / 2)));
+      const s = size / dist, cur = rec.cur;
+      let want = s > (cur === 0 ? LOD_NEAR * 0.8 : LOD_NEAR) ? 0 : s > (cur === 2 ? LOD_FAR : LOD_FAR * 0.8) ? 1 : 2;
+      // a level counts only once Cesium has it ready, so the old level stays up until the new one can draw
+      const ready = (l) => rec.models[l] && rec.models[l].ready;
+      if (!rec.models[want] && !rec.failed[want]) loadLod(o, rec, want);
+      if (!ready(want)) want = [want, want + 1, want - 1, 2, 1, 0].find(l => l >= 0 && l <= 2 && ready(l)) ?? -1;
+      // levels still loading stay switched on (they draw nothing until ready) so they finish loading
+      rec.models.forEach((m, i) => { if (m) { const sh = i === want || !m.ready; if (m.show !== sh) m.show = sh; } });
+      rec.cur = want;
+    }
+    for (const a of state.arrays) {
+      const rec = arrayPrims.get(a.id); if (!rec || !rec.low) continue;
+      const span = Math.max(a.cols * (a.panelW + a.colGap), a.rows * a.rowPitch, 3);
+      const near = span / Math.max(1, Cesium.Cartesian3.distance(cam, enu2ecef(a.x, a.y, a.z))) > (rec.near ? 0.03 : 0.04) || state.colourMode === 'map';
+      if (near !== rec.near) { rec.near = near; rec.prim.show = near; rec.low.show = !near; }
+    }
+  }
 
   function rebuildAll() {
     if (!scene) return;
-    arrayPrims.forEach(v => scene.primitives.remove(v.prim)); arrayPrims.clear();
-    objModels.forEach(m => scene.primitives.remove(m)); objModels.clear();
+    arrayPrims.forEach(v => { scene.primitives.remove(v.prim); if (v.low) scene.primitives.remove(v.low); }); arrayPrims.clear();
+    [...objModels.keys()].forEach(removeObjectModel);
     state.arrays.forEach(buildArrayPrimitive);
     state.objects.forEach(o => buildObjectModel(o));
     state.shade.dirty = true;
@@ -560,6 +556,7 @@
           if (rec) {
             const d0 = enu2ecef(0, 0, 0), d1 = enu2ecef(drag.item.x - drag.ox, drag.item.y - drag.oy, 0);
             rec.prim.modelMatrix = Cesium.Matrix4.fromTranslation(Cesium.Cartesian3.subtract(d1, d0, new Cesium.Cartesian3()));
+            if (rec.low) rec.low.modelMatrix = rec.prim.modelMatrix;
           }
         }
         return;
@@ -588,7 +585,8 @@
   function startPlacing(p) {
     state.placing = p;
     $('#modebar').hidden = false;
-    $('#modebar-text').textContent = p.kind === 'array' ? 'Click a roof or the ground to place the array' : `Click to place: ${PH.OBJECT_TYPES[p.type].label}`;
+    $('#modebar-text').textContent = p.kind === 'array' ? 'Click a roof or the ground to place the array'
+      : p.kind === 'measure' ? 'Click the first point to measure from' : `Click to place: ${PH.OBJECT_TYPES[p.type].label}`;
     $$('#obj-lib button').forEach(b => b.setAttribute('aria-pressed', String(p.kind === 'object' && b.dataset.type === p.type)));
     if (scene) scene.canvas.style.cursor = 'crosshair';
   }
@@ -600,6 +598,7 @@
   function placeAt(pos) {
     const p = surfacePoint(pos);
     if (!p) { toast('Click on the ground or a roof.', 'warn'); return; }
+    if (state.placing.kind === 'measure') { measureClick(p); return; }
     const pl = state.placing; stopPlacing();
     if (pl.kind === 'array') {
       const a = defaultArray(p[0], p[1], p[2]); state.arrays.push(a); buildArrayPrimitive(a); select('array', a.id, true);
@@ -607,6 +606,40 @@
       const o = defaultObject(pl.type, p[0], p[1], p[2]); state.objects.push(o); buildObjectModel(o); select('object', o.id, true);
     }
     state.shade.dirty = true; refreshLists(); saveSoon(); simulateNow(true); drawSunPath();
+  }
+  // measuring: two clicks on the 3D world, results in metres
+  let measureEnts = [];
+  function clearMeasure() { measureEnts.forEach(e => viewer.entities.remove(e)); measureEnts = []; }
+  function measureClick(p) {
+    const pts = state.placing.pts || (state.placing.pts = []);
+    pts.push(p);
+    const c = enu2ecef(...p);
+    if (pts.length === 1) clearMeasure();
+    measureEnts.push(viewer.entities.add({ position: c, point: { pixelSize: 9, color: Cesium.Color.fromCssColorString('#f3b23c'), outlineColor: Cesium.Color.BLACK, outlineWidth: 1, disableDepthTestDistance: Number.POSITIVE_INFINITY } }));
+    if (pts.length === 1) { $('#modebar-text').textContent = 'Click the second point'; return; }
+    const [a, b] = pts, dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+    const horiz = Math.hypot(dx, dy), straight = Math.hypot(horiz, dz);
+    const c0 = enu2ecef(...a), mid = enu2ecef((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+    const text = `${horiz.toFixed(2)} m across · ${dz >= 0 ? '+' : '−'}${Math.abs(dz).toFixed(2)} m height · ${straight.toFixed(2)} m straight`;
+    measureEnts.push(viewer.entities.add({ polyline: { positions: [c0, c], width: 3, material: Cesium.Color.fromCssColorString('#f3b23c'), depthFailMaterial: Cesium.Color.fromCssColorString('#f3b23c').withAlpha(0.45) } }));
+    measureEnts.push(viewer.entities.add({ position: mid, label: { text, font: '600 13px "IBM Plex Sans", sans-serif', fillColor: Cesium.Color.WHITE, showBackground: true, backgroundColor: Cesium.Color.fromCssColorString('#131e26').withAlpha(0.85), pixelOffset: new Cesium.Cartesian2(0, -14), disableDepthTestDistance: Number.POSITIVE_INFINITY } }));
+    $('#obj-measure-out').textContent = text;
+    stopPlacing();
+  }
+  /** Set an obstacle's height to the top of the 3D-tile surface inside its footprint (real tree or building) */
+  async function fitHeightToTiles(o) {
+    if (state.world.src === 'none') { toast('Load Cesium ion or Google 3D tiles first (World panel).', 'warn'); return; }
+    const ex = excludeList(), L = o.dims.length, Wd = o.dims.width ?? L, th = -o.heading * D2R, c = Math.cos(th), sn = Math.sin(th);
+    let top = -Infinity, hits = 0;
+    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+      const lx = i / 2 * L * 0.4, ly = j / 2 * Wd * 0.4, x = o.x + c * lx - sn * ly, y = o.y + sn * lx + c * ly;
+      let r; try { r = scene.pickFromRay(new Cesium.Ray(enu2ecef(x, y, o.z + 300), vecEnu2Ecef([0, 0, -1])), ex, 0.2); } catch (e) { r = null; }
+      if (r && r.position) { const z = ecef2enu(r.position)[2]; hits++; if (z > top) top = z; }
+    }
+    if (!hits || top - o.z < 0.3) { toast('No taller 3D-tile surface over this object. Drag it onto the real tree or building, then try again.', 'warn', 6000); return; }
+    o.dims.height = +(top - o.z).toFixed(2);
+    rebuildObjectSoon(o); afterObjectEdit(o); fillEditors();
+    toast(`Height set to ${o.dims.height} m from the 3D tiles.`, 'ok');
   }
   function select(kind, id, openPanel = false) {
     state.sel = kind ? { kind, id } : null;
@@ -616,8 +649,8 @@
   const selItem = () => !state.sel ? null : (state.sel.kind === 'array' ? state.arrays.find(a => a.id === state.sel.id) : state.objects.find(o => o.id === state.sel.id));
   function removeSelected() {
     const it = selItem(); if (!it) return;
-    if (state.sel.kind === 'array') { const r = arrayPrims.get(it.id); if (r) scene.primitives.remove(r.prim); arrayPrims.delete(it.id); geoms.delete(it.id); state.arrays = state.arrays.filter(a => a !== it); delete state.shade.profiles[it.id]; }
-    else { const m = objModels.get(it.id); if (m) scene.primitives.remove(m); objModels.delete(it.id); state.objects = state.objects.filter(o => o !== it); clearProfiles(); }
+    if (state.sel.kind === 'array') { const r = arrayPrims.get(it.id); if (r) { scene.primitives.remove(r.prim); if (r.low) scene.primitives.remove(r.low); } arrayPrims.delete(it.id); geoms.delete(it.id); state.arrays = state.arrays.filter(a => a !== it); delete state.shade.profiles[it.id]; }
+    else { removeObjectModel(it.id); state.objects = state.objects.filter(o => o !== it); clearProfiles(); }
     toast(`Removed ${state.sel.kind === 'array' ? it.name : PH.OBJECT_TYPES[it.type].label}.`);
     select(null); state.shade.dirty = true; saveSoon(); simulateNow(true); state.run = null;
   }
@@ -633,7 +666,7 @@
     it.x += dx; it.y += dy; it.z += dz;
     if (dh) { if (state.sel.kind === 'array') it.azimuth = ((it.azimuth + dh) % 360 + 360) % 360; else it.heading = ((it.heading + dh) % 360 + 360) % 360; }
     if (ds && state.sel.kind === 'object') { it.dims.length *= ds; if (it.dims.width != null) it.dims.width *= ds; it.dims.height *= ds; }
-    if (state.sel.kind === 'array') buildArrayPrimitive(it); else updateObjectMatrix(it);
+    if (state.sel.kind === 'array') buildArrayPrimitive(it); else if (ds) rebuildObjectSoon(it); else updateObjectMatrix(it);
     state.shade.dirty = true; clearProfiles(it); fillEditors(); saveSoon(); simulateNow(true); drawSunPath();
   }
   function onKey(e) {
@@ -1054,6 +1087,7 @@ void main() {
     cloudStage.enabled = state.visuals !== 'off';
   }
   function onPreRender() {
+    updateLods();
     if (!cloudStage || !siteMinv) return;
     const on = state.visuals !== 'off';
     cloudStage.enabled = on;
@@ -1358,7 +1392,7 @@ void main() {
       const o = selItem(); if (!o || state.sel.kind !== 'object') return;
       const k = e.target.dataset.dim; const v = Math.max(0.05, Number(e.target.value)); if (!isFinite(v)) return;
       o.dims[k] = v; if (k === 'length' && !PH.OBJECT_TYPES[o.type].dimLabels[1]) o.dims.width = v;
-      updateObjectMatrix(o); afterObjectEdit(o);
+      rebuildObjectSoon(o); afterObjectEdit(o);
     });
     $('#obj-heading').addEventListener('input', (e) => { const o = selItem(); if (!o) return; o.heading = Number(e.target.value); $('#obj-heading-out').textContent = o.heading + '°'; updateObjectMatrix(o); afterObjectEdit(o, true); });
     $('#obj-por').addEventListener('input', (e) => { const o = selItem(); if (!o) return; o.porosity = Number(e.target.value); $('#obj-por-out').textContent = Math.round(o.porosity * 100) + '%'; afterObjectEdit(o, true); });
@@ -1526,6 +1560,8 @@ void main() {
     $('#arr-place').addEventListener('click', () => { if (state.placing && state.placing.kind === 'array') stopPlacing(); else startPlacing({ kind: 'array' }); });
     $('#arr-list').addEventListener('click', (e) => { const li = e.target.closest('li[data-id]'); if (li) { select('array', li.dataset.id); flyToItem(selItem()); } });
     $('#obj-list').addEventListener('click', (e) => { const li = e.target.closest('li[data-id]'); if (li) { select('object', li.dataset.id); flyToItem(selItem()); } });
+    $('#obj-measure').addEventListener('click', () => { if (state.placing && state.placing.kind === 'measure') stopPlacing(); else startPlacing({ kind: 'measure', pts: [] }); });
+    $('#obj-fit').addEventListener('click', () => { const o = selItem(); if (o && state.sel.kind === 'object') fitHeightToTiles(o); });
     $('#arr-del').addEventListener('click', removeSelected); $('#obj-del').addEventListener('click', removeSelected);
     $('#arr-dup').addEventListener('click', duplicateSelected); $('#obj-dup').addEventListener('click', duplicateSelected);
     $('#arr-drop').addEventListener('click', () => { const it = selItem(); if (it) dropItems([it]).then(fillEditors); });
@@ -1855,13 +1891,17 @@ void main() {
     $('#site-lat').value = state.site.lat.toFixed(6); $('#site-lon').value = state.site.lon.toFixed(6);
     wire(); initSetup(); initAdmin(); buildModelPane2(); renderSiteFacts();
     if (location.hash === '#admin') { const go = () => openDrawer('admin'); const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); go(); } }, 400); }
-    window.__arien = { state, viewer: () => viewer, runPeriod, simulateNow, traceSkyline, measuredAligned };
+    window.__arien = { state, viewer: () => viewer, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef,
+      lodOf: (id) => { const r = objModels.get(id); return r ? (r.kind === 'lod' ? r.cur : 'fallback') : 'none'; },
+      placeObjects: (list) => { list.forEach(({ type, x, y, z }) => { const o = defaultObject(type, x, y, z); state.objects.push(o); buildObjectModel(o); }); refreshLists(); state.shade.dirty = true; } };
     const emb = embeddedIn();
     if (emb === 'claude') showSetupNote(PREVIEW_HINT);
     else if (emb === 'frame') showSetupNote('This page is running inside another page, which may block map and weather requests. If loading fails, open the file directly in Chrome or Edge.');
     const okWorkers = await workersUsable();
     if (!okWorkers) { showSetupNote('This viewer blocks the background threads the 3D engine needs, so the map cannot load here. Download the file and open it in Chrome or Edge.'); return; }
-    if (siteConfig && siteConfig.autoConnect && location.hash !== '#setup') { autoConnect(); return; }
+    const needKey = { ion: state.world.ion, 'google-ion': state.world.ion, google: state.world.google }[state.world.src];
+    const haveKey = state.world.src === 'none' || !!needKey;
+    if (siteConfig && siteConfig.autoConnect && haveKey && location.hash !== '#setup') { autoConnect(); return; }
     $('#s-src').focus();
   }
   boot();

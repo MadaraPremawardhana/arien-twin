@@ -1,8 +1,16 @@
 {
-  "version": 1,
-  "updated": "2026-11-02T00:00:00Z",
-  "autoConnect": false,
-  "site": { "name": "Buckingham, UK", "lat": 51.99564350977578, "lon": -0.9906258867252853 },
-  "world": { "src": "ion" },
-  "weather": { "mode": "forecast" }
+ "version": 1,
+ "updated": "2026-11-02T12:00:00Z",
+ "autoConnect": true,
+ "site": {
+  "name": "Buckingham, UK",
+  "lat": 51.99564350977578,
+  "lon": -0.9906258867252853
+ },
+ "world": {
+  "src": "ion"
+ },
+ "weather": {
+  "mode": "forecast"
+ }
 }

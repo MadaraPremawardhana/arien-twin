@@ -8,6 +8,7 @@ parts = {
     "/*@@STYLE@@*/": (src / "style.css").read_text(),
     "/*@@PHYSICS@@*/": (src / "physics.js").read_text(),
     "/*@@WEATHER@@*/": (src / "weather.js").read_text(),
+    "/*@@MODELS@@*/": (src / "models.js").read_text(),
     "/*@@APP@@*/": (src / "app.js").read_text(),
 }
 for marker, body in parts.items():

@@ -221,6 +221,8 @@
       <section data-pane="objects">
         <p class="hint">Pick an object, then click where it stands. Buildings and trees inside the 3D tiles are covered under <b>Shading</b>.</p>
         <div class="lib" id="obj-lib"></div>
+        <div class="row"><button class="btn" id="obj-measure">Measure in the 3D view</button></div>
+        <p class="hint" id="obj-measure-out">Click two points on a roof, tree or wall to read distance and height in metres.</p>
         <ul class="list" id="obj-list"></ul>
         <div id="obj-editor" hidden>
           <div class="ed-head"><strong id="obj-title">Object</strong>
@@ -239,6 +241,8 @@
             <div class="field"><label for="obj-y">North</label><input id="obj-y" type="number" step="0.1"></div>
             <div class="field"><label for="obj-z">Base height</label><input id="obj-z" type="number" step="0.05"></div>
           </div>
+          <button class="btn" id="obj-fit">Match height to the 3D tiles</button>
+          <p class="hint">Place the object on the real tree or building in the photorealistic tiles first; this reads its height from them. Models are built at these sizes in metres, with more detail as you zoom in.</p>
           <p class="hint">Drag in the view · arrows move · Q / E rotate · [ ] scale · Del removes.</p>
         </div>
       </section>
@@ -474,6 +478,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
 <script>/*@@PHYSICS@@*/</script>
 <script>/*@@WEATHER@@*/</script>
+<script>/*@@MODELS@@*/</script>
 <script>/*@@APP@@*/</script>
 </body>
 </html>

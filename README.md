@@ -4,13 +4,35 @@ Browser digital twin of rooftop PV for [ARIEN](https://arien.base44.app/): a Ces
 
 **Live site:** https://madarapremawardhana.github.io/arien-twin/
 
+## Put the Cesium ion key in the site ("hardcode" it)
+
+The site reads its keys from `config.json` at the repository root, so the key lives in that one file rather than in the code.
+
+1. In Cesium ion (cesium.com/ion → Access Tokens) create a token with only the `assets:read` scope, only the assets the site uses (1 World Terrain, 2 Bing imagery, 96188 OSM Buildings, 2275207 Google Photorealistic), and **Allowed URLs** = `https://madarapremawardhana.github.io`. Use the domain without the `/arien-twin/` path: browsers send only the domain as the referrer to other sites, so a path-restricted token is refused.
+2. On GitHub open `config.json` → pencil (Edit) and add the token under `world`:
+   ```json
+   "world": { "src": "ion", "ionToken": "eyJhbGciOi…" },
+   ```
+   Keep `"autoConnect": true`. **Commit changes.** GitHub Pages republishes in about a minute (browsers may cache for up to 10).
+3. Visitors now go straight to the 3D world. `…/arien-twin/#setup` still opens the connect screen.
+
+The admin panel does the same: tick **Include keys** and press **Publish settings**. Anyone can read a key that a web page uses, which is why step 1 restricts it; rotate it now and then (new token, publish, delete the old one).
+
+## Weather
+
+Only the variables the thesis models use are requested: `temperature_2m`, `cloud_cover`, `wind_speed_10m`, `wind_direction_10m`, `weather_code`, `shortwave_radiation`, `diffuse_radiation` (precipitation and snow are derived from the weather code for the visuals). Open-Meteo's free API drops requests at busy times, mostly around the full hour (HTTP 503 "The service is overloaded"), so the site reads a copy first:
+
+- `.github/workflows/weather-cache.yml` runs at :23 past each hour and when `config.json` changes. It writes `forecast.json`, `historical.json` (92 days) and `previous.json` (forecasts issued 1–4 days ahead, 45 days) to the `weather-data` branch.
+- The page uses that copy for the published site when it covers the request (fresh: 3 hours for forecasts, 30 hours otherwise), otherwise calls Open-Meteo with two retries, and falls back to an older copy before giving up.
+- Other places, earlier dates and leads beyond 4 days go to Open-Meteo directly.
+
 ## Admin setup (all in the browser)
 
 1. **Lock the keys to this site** before publishing them:
    - **Cesium ion** (cesium.com/ion → Access Tokens): a token with `assets:read`, only the assets you use (World Terrain 1, Bing imagery 2, OSM Buildings 96188, Google Photorealistic 2275207), and **Allowed URLs** = `https://madarapremawardhana.github.io/arien-twin/`.
    - **Google Maps Platform** (if used): restrict the key to the **Map Tiles API**, website restriction `https://madarapremawardhana.github.io/*`, and a daily quota.
 2. Open the site. On the connect screen paste the token → **Load 3D world** → **Load weather**.
-3. Place arrays and obstacles and choose models.
+3. Place arrays and obstacles and choose models. Obstacles are real-size models with three levels of detail (close-up textured, mid, far); **Objects → Measure in the 3D view** and **Match height to the 3D tiles** size them against the photorealistic tiles.
 4. **World → Site settings for visitors (admin)** (or open `…/arien-twin/#admin`). Create a fine-grained GitHub token (GitHub → Settings → Developer settings → Fine-grained tokens) with access to **this repository only** and **Contents: Read and write**. Paste it in the panel, tick what to publish, press **Publish settings**. This commits `config.json`.
 5. Visitors then get your site, arrays, obstacles, models and world, and connect automatically. GitHub Pages caches for up to 10 minutes.
 
@@ -47,7 +69,7 @@ Edit files in `src/`, run `build.py`, commit both `src/` and `index.html`.
 
 ## Physics: what is implemented and what needs the PV Science project
 
-All in `src/physics.js`, unit-tested in `test/physics.test.js` (65 checks, including sun position against NOAA values).
+All in `src/physics.js`, unit-tested in `test/physics.test.js` (75 checks, including sun position against NOAA values and the weather cache).
 
 | Part | Implementation | Status |
 |---|---|---|
@@ -66,12 +88,15 @@ All in `src/physics.js`, unit-tested in `test/physics.test.js` (65 checks, inclu
 
 ```
 src/physics.js     solar geometry, 5 models, thermal, ray casting, metrics (no DOM)
-src/weather.js     Open-Meteo URLs and parsing, CSV import, interpolation
+src/weather.js     Open-Meteo URLs and parsing, weather cache, CSV import, interpolation
+src/models.js      obstacle models (trees, hedges, walls, chimneys, buildings, poles) at 3 levels of detail, exported as glTF
 src/app.js         Cesium world, arrays/obstacles, simulation loop, visuals, UI
 src/template.html  markup; src/style.css styles
 build.py           inlines everything into index.html (what GitHub Pages serves)
 test/physics.test.js   node test/physics.test.js
 test/run_browser.py    headless Chrome check with mocked CDN, tiles and weather
+test/models_check.py   renders every obstacle at each level of detail
+tools/fetch_weather.py fills the weather-data branch (run by the workflow)
 ```
 
 ## Known limits
