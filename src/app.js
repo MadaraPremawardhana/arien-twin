@@ -1725,11 +1725,14 @@ void main() {
     return all > 0 ? lost / all : 0;
   }
   let lossTimer = null;
+  function updateQuickLoss(delay = 0) {
+    clearTimeout(lossTimer);
+    lossTimer = setTimeout(() => { state.quickLoss = quickShadingLoss(); if (window.ArienPlanner) ArienPlanner.refreshSummary(); renderResults(); }, delay);
+  }
   function designChanged(now) {
     if (state.yieldRes) state.yieldRes.stale = true;
     if (state.forecastRes) state.forecastRes.stale = true;
-    clearTimeout(lossTimer);
-    lossTimer = setTimeout(() => { state.quickLoss = quickShadingLoss(); if (window.ArienPlanner) ArienPlanner.refreshSummary(); renderResults(); }, now ? 0 : 350);
+    updateQuickLoss(now ? 0 : 350);
     if (window.ArienPlanner && state.view === 'design') ArienPlanner.redraw();
     renderSavedSites();
   }
@@ -1783,6 +1786,7 @@ void main() {
       closeDrawer(); toggleDash(false); stopPlacing();
       if (viewer) viewer.useDefaultRenderLoop = false; // the globe is hidden: save the GPU
       if (window.ArienPlanner) ArienPlanner.show();
+      if (state.quickLoss == null) updateQuickLoss(0);
       if (location.hash !== '#design') history.replaceState(null, '', '#design');
     } else {
       if (viewer) { viewer.useDefaultRenderLoop = true; viewer.resize(); }
