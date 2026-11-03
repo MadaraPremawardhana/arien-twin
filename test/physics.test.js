@@ -288,6 +288,52 @@ ok(W.describe(61, 90) === 'Light rain' && W.describe(1, 10) === 'Clear sky', 'we
   ok(ev.share < wash.share, 'a 2.3 kW EV top-up is covered less than a washing machine');
   const rcLate = FI.recommend(ft, fk, { utcOffsetMs: 0, annualUse: 2500, now: Date.UTC(2026, 5, 20, 16, 0), days: 1 });
   ok(rcLate[0].devices.every(d => d.start == null || d.start >= Date.UTC(2026, 5, 20, 15, 45)), 'no windows in the past');
+  // --- per-cell line traces by channel ---
+  {
+    const arr = { x: 0, y: 0, z: 0, azimuth: 180, tilt: 0, rows: 1, cols: 1, panelW: 1, panelL: 1, colGap: 0, rowPitch: 2, mountHeight: 0, cellsX: 4, cellsY: 4 };
+    const g = [P.buildArrayGeometry(arr)];
+    const sunS = { alt: 30 * Math.PI / 180, az: Math.PI }, vS = P.sunVectorENU(sunS.alt, sunS.az);
+    // a 10 m wall 3 m south, 6 m high: blocks the whole panel; the trace reports the wall and its distance
+    const wall = { type: 'wall', x: 0, y: -3, z: 0, heading: 0, dims: { length: 10, width: 0.3, height: 6 }, porosity: 0 };
+    let tr = P.traceCells(g, [wall], vS, sunS, null, { detail: true });
+    ok(tr[0].trans.every(t => t === 0) && tr[0].hit.every(h => h === 0), 'wall blocks every cell and is the hit object');
+    const d0 = tr[0].dist[0]; near(d0, (3 - 0.15 - 0.375) / Math.cos(sunS.alt), 0.01, 'trace distance to the wall face');
+    // a tree canopy with 40% transparency lets 40% through; a fully transparent one lets all through
+    const tree = { type: 'tree', x: 0, y: -6, z: 0, heading: 0, dims: { length: 6, width: 6, height: 9 }, porosity: 0.4 };
+    const sunT = { alt: 40 * Math.PI / 180, az: Math.PI }, vT = P.sunVectorENU(sunT.alt, sunT.az);
+    tr = P.traceCells(g, [tree], vT, sunT, null, { detail: true });
+    ok(tr[0].trans.every(t => Math.abs(t - 0.4) < 1e-6) && tr[0].hit.every(h => h === 0), 'canopy transparency 40%: ' + tr[0].trans[0].toFixed(3));
+    tr = P.traceCells(g, [{ ...tree, porosity: 1 }], vT, sunT, null, { detail: true });
+    ok(tr[0].trans.every(t => t === 1), 'fully transparent canopy: no loss');
+    // two canopies in a row multiply (0.5 × 0.5)
+    const h1 = { type: 'hedge', x: 0, y: -2, z: 0, heading: 0, dims: { length: 10, width: 0.8, height: 4 }, porosity: 0.5 }, h2 = { ...h1, y: -3.5 };
+    tr = P.traceCells(g, [h1, h2], vS, sunS, null, { detail: true });
+    ok(tr[0].trans.every(t => Math.abs(t - 0.25) < 1e-6) && tr[0].hit.every(h => h === 0), 'two hedges at 50% let 25% through, nearest is the hit');
+    // a low wall whose shadow edge crosses the panel: centre rays give whole cells, 2×2 rays give partial cells
+    const low = { type: 'wall', x: 0, y: -1, z: 0, heading: 0, dims: { length: 10, width: 0.1, height: 0.5 }, porosity: 0 };
+    const t1 = P.traceCells(g, [low], vS, sunS, null, { samples: 1 })[0].trans, t2 = P.traceCells(g, [low], vS, sunS, null, { samples: 2 })[0].trans;
+    const lit1 = t1.reduce((a, b) => a + b, 0) / 16, lit2 = t2.reduce((a, b) => a + b, 0) / 16;
+    const exact = Math.min(1, Math.max(0, (0.5 + 0.5 - (1 - 0.05) * Math.tan(sunS.alt) * 0) ));
+    ok(t2.some(t => t > 0 && t < 1) && !t1.some(t => t > 0 && t < 1), 'sub-rays give partly covered cells');
+    ok(Math.abs(lit1 - lit2) <= 0.25, `coverage agrees between 1 and 4 rays per cell (${lit1.toFixed(3)} vs ${lit2.toFixed(3)})`);
+    // channels: panels off → no row shading; tiles skyline → TILES
+    const two = [P.buildArrayGeometry({ ...arr, rows: 2, tilt: 40, rowPitch: 1.0, cellsX: 2, cellsY: 2 })];
+    const sunL = { alt: 12 * Math.PI / 180, az: Math.PI }, vL = P.sunVectorENU(sunL.alt, sunL.az);
+    const withP = P.traceCells(two, [], vL, sunL, null, { detail: true })[0], noP = P.traceCells(two, [], vL, sunL, null, { channels: { panels: false } })[0];
+    ok(withP.hit.some(h => h === P.HIT.PANEL) && noP.trans.every(t => t === 1), 'panel channel: row shading on, and off when disabled');
+    const sky = P.traceCells(g, [], vS, sunS, () => true, { detail: true })[0];
+    ok(sky.trans.every(t => t === 0) && sky.hit.every(h => h === P.HIT.TILES), '3D-tile skyline channel');
+    ok(P.traceCells(g, [], vS, sunS, () => true, { channels: { tiles: false } })[0].trans.every(t => t === 1), 'tiles channel off');
+    // shadeCells still returns plain transmissions; attribution splits blocked beam by cause
+    const sc = P.shadeCells(g, [wall], vS, sunS, null);
+    ok(sc[0] instanceof Float32Array && sc[0].every(t => t === 0), 'shadeCells wraps the trace');
+    const left = { ...wall, x: -5.25, dims: { ...wall.dims, length: 10 } }, right = { ...tree, x: 0.4, y: -4, porosity: 0 };
+    const trA = P.traceCells(g, [left, right], vS, sunS, null, { detail: true });
+    const at = P.shadeAttribution(g, trA, vS), w0 = at.by.get(0) || 0, w1 = at.by.get(1) || 0;
+    near(w0 + w1, at.total, 1e-9, 'attribution weights add up');
+    ok(w0 > 0 && w1 > 0, 'both obstacles take part of the beam: ' + (w0 / at.total).toFixed(2) + ' / ' + (w1 / at.total).toFixed(2));
+    near(at.total, trA[0].trans.reduce((s, t) => s + (1 - t), 0) * Math.cos(Math.PI / 2 - sunS.alt) / 16, 1e-6, 'attribution total = lost cell share × cos(incidence) × area');
+  }
   console.log(`${passes} passed, ${fails} failed`);
   process.exit(fails ? 1 : 0);
   })();

@@ -4,6 +4,19 @@ Browser digital twin of rooftop PV for [ARIEN](https://arien.base44.app/): a Ces
 
 **Live site:** https://madarapremawardhana.github.io/arien-twin/ (planner: `…/#design`, dashboard: `…/#dashboard`)
 
+## Shading: per-cell line traces
+
+Every cell of every panel is traced toward the sun, the browser version of the thesis's per-cell `LineTraceByChannel` (`ArienPhysics.traceCells`). Channels:
+
+- **Placed obstacles**: walls, buildings, chimneys, poles and tree trunks block; a tree or hedge canopy passes its **transparency** (0% = solid, as in the thesis); several canopies multiply.
+- **Other panels**: row-to-row shading, opaque.
+- **3D tiles**: buildings, terrain and trees in the tiles, through the traced skyline of each panel (Shading → Trace skyline).
+
+A cell keeps the share of direct sun its trace lets through; with **4 rays per cell** (2×2) a cell can be partly covered. The panel's direct sun is the cell average; diffuse light is not shaded. The same traces run at every step of the 7-day forecast (15 minutes), the period run and the 12-month yield (hourly). Each run also computes the unshaded output, and charges the difference to whatever each cell's trace hit, weighted by the blocked direct sun.
+
+- **Shading → Line traces to the sun** (or **T**, or the HUD's **Traces** chip) draws the traces: green clear, red to the hit point on an obstacle, amber through a canopy, orange another panel, violet the 3D tiles. A readout shows how many cells are shaded now and what takes the light.
+- Changing an obstacle, its transparency or the trace settings re-runs the 7-day forecast by itself. The Dashboard's **Shading from obstacles** card gives kWh lost per cause for the next 7 days and for a year; today's chart shows output with and without shading; the PDF report lists the causes.
+
 ## Dashboard and site report
 
 **Dashboard** (rail, below Meta) summarises a simulated design. After **Simulate in 3D →** the camera frames the design from in front and a year of yield runs in the background, so the dashboard is ready when you open it.
@@ -111,6 +124,7 @@ ARIEN_DEPS=node_modules python3 test/diag_check.py
 ARIEN_DEPS=node_modules python3 test/planner_check.py /tmp/planner   # needs leaflet@1.9.4 too
 ARIEN_DEPS=node_modules python3 test/models_check.py /tmp/models
 ARIEN_DEPS=node_modules python3 test/dashboard_check.py /tmp/dash      # needs jspdf@2.5.1 too
+ARIEN_DEPS=node_modules python3 test/shading_check.py /tmp/shading
 ```
 
 Edit files in `src/`, run `build.py`, commit both `src/` and `index.html`.
@@ -133,7 +147,7 @@ Edit files in `src/`, run `build.py`, commit both `src/` and `index.html`.
 
 ## Physics: what is implemented and what needs the PV Science project
 
-All in `src/physics.js`, unit-tested in `test/physics.test.js` (132 checks, including sun position against NOAA values, the weather cache, the panel library, geocoding, saved sites and the finance model).
+All in `src/physics.js`, unit-tested in `test/physics.test.js` (146 checks, including sun position against NOAA values, the weather cache, the panel library, geocoding, saved sites, the finance model and the line traces).
 
 | Part | Implementation | Status |
 |---|---|---|
@@ -145,7 +159,7 @@ All in `src/physics.js`, unit-tested in `test/physics.test.js` (132 checks, incl
 | Real-World GHI | Open-Meteo GHI/DNI/DHI, isotropic transposition | Check against thesis transposition |
 | Hourly → instantaneous | Open-Meteo radiation is a backward hourly mean; converted to clearness index and diffuse fraction at the half hour, then rebuilt from the instantaneous sun | Implementation assumption |
 | Thermal | Bálint, Fodor, Magyar (2019) ODE, solved exactly per step; h = 5.7 + 3.8·v; heat capacity 9,600 J/m²K; efficiency −0.35 %/°C default | h(v) and heat capacity are assumptions |
-| Shading | Beam only, per cell; rays to the sun against other panels (row-to-row) and placed obstacles; 3D tiles via traced skyline per panel or per array | No bypass-diode or mismatch model; diffuse not shaded |
+| Shading | Beam only; line trace per cell (or 2×2 per cell) to the sun against other panels, placed obstacles (canopy transparency, multiplied through several canopies) and the 3D-tile skyline; losses charged per cause | No bypass-diode or mismatch model; diffuse not shaded; multiplying canopy transparencies is our rule (the thesis treats canopies as solid) |
 | Seasonal rule | Summer (Jun–Aug) → RW-GHI, spring (Mar–May) → HDKR, autumn/winter → K–N; flipped for the southern hemisphere | From the company brief |
 
 ## Layout

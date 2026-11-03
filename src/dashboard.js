@@ -53,9 +53,10 @@
       const idx = f.series.times.map((t, i) => i).filter(i => f.series.times[i] >= t0 && f.series.times[i] < t0 + 86400000);
       if (idx.length) {
         const xs = idx.map(i => f.series.times[i]), ys = idx.map(i => f.series.kw[i] * (1 - a.systemLosses / 100));
+        const free = f.series.kwFree ? idx.map(i => f.series.kwFree[i] * (1 - a.systemLosses / 100)) : null;
         const step = xs.length > 1 ? (xs[1] - xs[0]) / 3600000 : 0.25;
         let pk = 0; ys.forEach((v, i) => { if (v > ys[pk]) pk = i; });
-        today = { t0, xs, ys, cloud: idx.map(i => f.series.cloud ? f.series.cloud[i] : null), load: xs.map(t => F.loadAt(t, a.annualUse, off)),
+        today = { t0, xs, ys, free: free && free.some((v, i) => v - ys[i] > 0.005) ? free : null, cloud: idx.map(i => f.series.cloud ? f.series.cloud[i] : null), load: xs.map(t => F.loadAt(t, a.annualUse, off)),
           kwh: ys.reduce((s, v) => s + v * step, 0), peak: ys[pk], peakAt: xs[pk] };
       }
     }
@@ -73,7 +74,7 @@
     return `<div class="kpis">
       ${kpi('System capacity', num(m.kwp, 2), 'kWp', `${m.d.groups.length} array${m.d.groups.length === 1 ? '' : 's'} · ${models}`)}
       ${kpi('Panels', num(m.d.panels), '', m.d.groups.map(g => `${g.id}: ${g.panels} at ${g.tilt}° facing ${api.escapeHtml(compassWord(g.azimuth))}`).slice(0, 3).join('<br>'))}
-      ${kpi('Estimated annual production', num(y1.generation), 'kWh', `${num(y1.generation / Math.max(m.kwp, 1e-6))} kWh per kWp · after ${num(a.systemLosses, 0)}% system losses`)}
+      ${kpi('Estimated annual production', num(y1.generation), 'kWh', `${num(y1.generation / Math.max(m.kwp, 1e-6))} kWh per kWp · after ${num((m.y.shadingLoss || 0) * 100, 1)}% shading and ${num(a.systemLosses, 0)}% system losses`)}
       ${kpi('Estimated annual savings', money(saving), '', `<b>${money(y1.selfSaving)}</b> on bills: ${num(y1.selfUsed)} kWh you use yourself instead of buying it at ${num(a.importPrice, 2)}p<br><b>${money(y1.exportIncome)}</b> export income: ${num(y1.exported)} kWh sold to the grid at ${num(a.exportPrice, 1)}p`, 'wide')}
       ${kpi('CO₂ reduction', num(y1.generation * a.carbonFactor), 'kg a year', `About ${num(m.life.co2 / 1000, 1)} t over ${m.cf.lifetime} years at today's grid intensity (${a.carbonFactor} kg/kWh)`)}
       ${kpi('Estimated payback', m.cf.payback != null ? num(m.cf.payback, 1) : `> ${m.cf.years.length}`, 'years', `Installed cost ${money(m.cf.capex)} (${money(m.cf.costPerKwp)}/kWp, 0% VAT)`)}
@@ -103,6 +104,25 @@
       return `<div class="reco-day"><div class="reco-day-head"><b>${dayName(d.day, i)}</b><span>${head}</span></div><ul class="reco-list">${rows}</ul></div>`;
     }).join('');
     return `<p class="hint">For homes without a battery: start these when your panels make more than the house uses. Windows are for typical appliance loads; the bar shows how much of each run the forecast solar covers.</p>${days}`;
+  }
+  function shadeRows(list, total, factor, unit) {
+    if (!list || !list.length) return '<p class="hint">Nothing shades the panels.</p>';
+    const max = Math.max(...list.map(r => r.kwh));
+    return `<ul class="shade-list">${list.map(r => `<li><span>${api.escapeHtml(r.label)}</span><span class="bar"><span style="width:${Math.round(r.kwh / max * 100)}%"></span></span><b>${num(r.kwh * factor, r.kwh * factor < 10 ? 1 : 0)} ${unit}</b></li>`).join('')}</ul>`;
+  }
+  function shadingHtml(m) {
+    const a = m.a, ac = (1 - a.systemLosses / 100), y = m.y, f = m.f && m.f.shading;
+    const yLost = (y.unshadedTotal ? y.unshadedTotal - y.total : 0) * ac * (1 - a.firstYearDegradation / 100);
+    const nObs = S.objects.length;
+    return `<div class="shade-cols">
+      <div><div class="fc-head"><div><span class="fc-big">${f ? num(f.lostKWh * ac, 1) : '—'}</span> kWh lost in the next 7 days</div><div class="hint">${f ? num(f.pct * 100, 1) + '% of what the panels would make unshaded' : ''}</div></div>
+        ${f ? shadeRows(f.by, f.lostKWh, ac, 'kWh') : '<p class="hint">Run the forecast.</p>'}</div>
+      <div><div class="fc-head"><div><span class="fc-big">${num(yLost)}</span> kWh a year</div><div class="hint">${num((y.shadingLoss || 0) * 100, 1)}% over the last 12 months of weather</div></div>
+        ${shadeRows(y.shadingBy, yLost, ac * (1 - a.firstYearDegradation / 100), 'kWh/yr')}</div>
+    </div>
+    <div class="row"><button class="btn" id="db-show-traces"><svg><use href="#i-shade"/></svg>See the line traces in 3D</button>
+      <span class="hint">${nObs} obstacle${nObs === 1 ? '' : 's'} · ${S.shade.samples === 2 ? '4 rays' : '1 ray'} per cell · ${S.shade.useTiles ? '3D-tile skyline included' : '3D tiles not included (trace the skyline in the 3D view)'}</span></div>
+    <p class="hint">Each cell is traced toward the sun at every forecast step (15 minutes) and every hour of the year. A cell keeps the direct sun its trace lets through: none past walls, buildings, poles and other panels, the obstacle's transparency through a canopy. The panels' loss is the cell average, and each obstacle is charged for the cells it blocks. Diffuse light is not shaded.</p>`;
   }
   function financeHtml(m) {
     const segs = [5, 10, 15, 20].map(n => `<button data-h="${n}" aria-pressed="${n === horizon}">${n} years</button>`).join('');
@@ -171,6 +191,7 @@
       ${card('db-overview', 'Overview', overviewHtml(m), 'span-12')}
       ${card('db-forecast', 'Today’s forecast', forecastHtml(m), 'span-7')}
       ${card('db-reco', 'Recommendations', recoHtml(m), 'span-5')}
+      ${card('db-shading', 'Shading from obstacles', shadingHtml(m), 'span-12')}
       ${card('db-finance', 'Financial overview', financeHtml(m), 'span-12')}
       ${card('db-monthly', 'Monthly production', monthlyHtml(m), 'span-12')}
       ${card('db-assume', 'Assumptions', assumptionsHtml(m), 'span-12')}
@@ -187,6 +208,7 @@
     });
     $('#db-as-reset').onclick = () => { S.finance = {}; api.saveSoon(); render(); };
     $('#db-pdf').onclick = () => downloadReport(m);
+    const st = $('#db-show-traces'); if (st) st.onclick = () => api.showTraces();
   }
   function wireCommon() {
     $$('[data-open]', $('#db-body')).forEach(b => { b.onclick = () => api.openSite(b.dataset.open, b.dataset.view); });
@@ -204,7 +226,7 @@
   }
   function drawCharts(m) {
     const Ch = C(); if (!Ch) return; const P = Ch.PALETTE();
-    if (m.today) Ch.dayCurve($('#db-today-chart'), { xs: m.today.xs, ys: m.today.ys, load: m.today.load, cloud: m.today.cloud.every(v => v == null) ? null : m.today.cloud, now: Date.now(), xMin: m.today.t0, xMax: m.today.t0 + 86400000, offsetMs: api.utcOffset() });
+    if (m.today) Ch.dayCurve($('#db-today-chart'), { xs: m.today.xs, ys: m.today.ys, free: m.today.free, load: m.today.load, cloud: m.today.cloud.every(v => v == null) ? null : m.today.cloud, now: Date.now(), xMin: m.today.t0, xMax: m.today.t0 + 86400000, offsetMs: api.utcOffset() });
     const ys = m.cf.years.slice(0, horizon);
     Ch.combo($('#db-finance-chart'), { labels: ys.map(r => 'Y' + r.year), stacks: [{ label: 'Bill savings', values: ys.map(r => r.selfSaving), color: P.sun }, { label: 'Export income', values: ys.map(r => r.exportIncome), color: P.sky }],
       line: { label: 'Running total', values: ys.map(r => r.cumulative), color: P.good }, yTitle: '£ a year', y2: true, y2Title: '£ running total', zeroLine: true,
@@ -239,6 +261,9 @@
       design: m.d, zones: S.zones.map(z => ({ name: z.name, poly: z.poly })), objects: S.objects.map(o => ({ type: o.type, label: api.PH.OBJECT_TYPES[o.type].label, x: o.x, y: o.y, heading: o.heading, dims: { ...o.dims } })),
       kpis: { kwp: m.kwp, panels: m.d.panels, production: m.y1.generation, savings: m.y1.selfSaving + m.y1.exportIncome - a.maintenance, selfSaving: m.y1.selfSaving, exportIncome: m.y1.exportIncome,
         selfUsed: m.y1.selfUsed, exported: m.y1.exported, co2: m.y1.generation * a.carbonFactor, payback: m.cf.payback, roi: m.life.roi, net: m.life.net, capex: m.cf.capex, lifetime: m.cf.lifetime, selfUseShare: m.sc.selfUseShare, specific: m.y1.generation / Math.max(m.kwp, 1e-6) },
+      shading: { year: { pct: m.y.shadingLoss || 0, by: (m.y.shadingBy || []).map(r => ({ label: r.label, kwh: r.kwh * (1 - a.systemLosses / 100) * (1 - a.firstYearDegradation / 100) })) },
+        week: m.f && m.f.shading ? { pct: m.f.shading.pct, kwh: m.f.shading.lostKWh * (1 - a.systemLosses / 100), by: m.f.shading.by.map(r => ({ label: r.label, kwh: r.kwh * (1 - a.systemLosses / 100) })) } : null,
+        samples: S.shade.samples, tiles: !!S.shade.useTiles, objects: S.objects.map(o => ({ label: api.PH.OBJECT_TYPES[o.type].label, h: o.dims.height, transparency: api.PH.OBJECT_TYPES[o.type].porous ? (o.porosity || 0) : 0 })) },
       monthly: m.monthly, monthsLabel: api.MONTHS, yieldInfo: { model: api.modelLabel(m.y.model), start: m.y.start, end: m.y.end, shadingLoss: m.y.shadingLoss, dcTotal: m.y.total, systemLosses: a.systemLosses },
       forecast: m.f ? { model: api.modelLabel(m.f.model), days: m.f.days.map(d => ({ t: d.t, label: api.fmtDay(d.t), kwh: d.kwh * (1 - a.systemLosses / 100) })), source: m.f.source } : null,
       finance: { horizons: [5, 10, 15, 20, m.cf.lifetime].map(n => m.cf.totals(n)), years: m.cf.years.slice(0, m.cf.lifetime), capex: m.cf.capex, payback: m.cf.payback },
@@ -256,7 +281,7 @@
     init(a) { api = a; S = a.state; F = root.ArienFinance; $$('#dashboard [data-goto]').forEach(btn => { btn.onclick = () => api.setView(btn.dataset.goto); }); },
     show() {
       render();
-      const need = S.arrays.length && (!S.yieldRes || !S.forecastRes || !S.forecastRes.series);
+      const need = S.arrays.length && (!S.yieldRes || !S.forecastRes || !S.forecastRes.series || S.yieldRes.stale || S.forecastRes.stale);
       if (need) run();
     },
     refresh() {

@@ -326,15 +326,19 @@
       d: [(c * d[0] - s * d[1]) / sx, (s * d[0] + c * d[1]) / sy, d[2] / sz]
     };
   }
-  /** Returns transmission along ray through object: 1 = clear, porosity value if porous part hit, 0 opaque */
-  function objectTransmission(obj, o, d) {
-    const type = OBJECT_TYPES[obj.type]; if (!type) return 1;
+  /**
+   * Line trace from point o along unit direction d against one obstacle (like a trace by channel against
+   * its collision shapes). Returns null if nothing is hit, else {t: distance to the first hit (m),
+   * trans: light passing the object, 0 = opaque, the object's transparency where only its canopy is hit}.
+   */
+  function objectTrace(obj, o, d) {
+    const type = OBJECT_TYPES[obj.type]; if (!type) return null;
     // quick bounding-sphere reject in world space
     const hx = obj.dims.length / 2, hy = (obj.dims.width ?? obj.dims.length) / 2, hz = obj.dims.height / 2;
     const br = Math.sqrt(hx * hx + hy * hy + hz * hz);
-    if (raySphere(o, d, [obj.x, obj.y, obj.z + hz], br) === Infinity) return 1;
+    if (raySphere(o, d, [obj.x, obj.y, obj.z + hz], br) === Infinity) return null;
     const u = toUnitSpace(obj, o, d);
-    let trans = 1;
+    let trans = 1, tMin = Infinity;
     for (const p of type.parts) {
       let t = Infinity;
       if (p.kind === 'box') t = rayBox(u.o, u.d, [-0.5, -0.5, 0], [0.5, 0.5, 1]);
@@ -342,13 +346,15 @@
       else if (p.kind === 'cyl') t = rayCylinder(u.o, u.d, 0, 0, p.r, p.z0, p.z1);
       else if (p.kind === 'cone') t = rayCone(u.o, u.d, 0, 0, p.rb, p.zb, p.za);
       if (t !== Infinity) {
+        // the unit-space transform is linear, so t is also the world distance along d
         const por = (p.porous && type.porous) ? Math.max(0, Math.min(1, obj.porosity || 0)) : 0;
-        trans = Math.min(trans, por);
-        if (trans === 0) return 0;
+        trans = Math.min(trans, por); tMin = Math.min(tMin, t);
       }
     }
-    return trans;
+    return tMin === Infinity ? null : { t: tMin, trans };
   }
+  /** Transmission along a ray through one obstacle: 1 = clear, its transparency through a canopy, 0 opaque */
+  function objectTransmission(obj, o, d) { const r = objectTrace(obj, o, d); return r ? r.trans : 1; }
 
   // ---------- Panel arrays → cells ----------
   /**
@@ -375,62 +381,117 @@
           const su = ((i + 0.5) / a.cellsX - 0.5) * a.panelW, sv = ((j + 0.5) / a.cellsY - 0.5) * a.panelL;
           cells.push({ p: [center[0] + u[0] * su + v[0] * sv, center[1] + u[1] * su + v[1] * sv, center[2] + u[2] * su + v[2] * sv], i, j });
         }
-        panels.push({ c: center, u, v, n, hu: a.panelW / 2, hv: a.panelL / 2, cells, area: a.panelW * a.panelL, row: r, col: c });
+        panels.push({ c: center, u, v, n, hu: a.panelW / 2, hv: a.panelL / 2, cw: a.panelW / a.cellsX, ch: a.panelL / a.cellsY, cells, area: a.panelW * a.panelL, row: r, col: c });
       }
     }
     return { panels, u, v, n, f, tilt, az };
   }
 
+  // Hit codes from a cell's line trace
+  const HIT = { CLEAR: -1, PANEL: -2, TILES: -3, AWAY: -4 };
   /**
-   * Beam transmission for every cell of every array for a given sun vector.
-   * geoms: [{panels:[...]}], objects: [...], horizonFn(panelRef, azRad, altRad) -> bool blocked (3D tiles)
-   * Returns Float32Array per array (cell order as in panels[].cells) with transmission 0..1
+   * Line trace from every cell toward the sun, by channel (the browser version of the thesis's per-cell
+   * LineTraceByChannel). Channels: other panels (opaque), placed obstacles (opaque, or their transparency
+   * where only a canopy is crossed; several canopies multiply), 3D tiles (traced skyline per panel).
+   * opts: {channels: {panels, objects, tiles} (all on), samples: 1 = cell centre as in the thesis, 2 = 2×2
+   * rays per cell so a cell can be partly covered, detail: also return what each ray hit, offset (m)}.
+   * Returns per array {trans: Float32Array 0..1, hit: Int16Array (object index ≥ 0 or a HIT code),
+   * dist: Float32Array (m to the first hit, Infinity if clear)}; trans/hit/dist follow panels[].cells order.
    */
-  function shadeCells(geoms, objects, sunVec, sun, horizonFn, opts = {}) {
-    const offset = opts.offset ?? 0.02;
+  function traceCells(geoms, objects, sunVec, sun, horizonFn, opts = {}) {
+    const offset = opts.offset ?? 0.02, ch = { panels: true, objects: true, tiles: true, ...(opts.channels || {}) };
+    const ns = Math.max(1, Math.min(3, opts.samples | 0 || 1)), detail = !!opts.detail;
     const allPanels = [];
     geoms.forEach((g, gi) => g.panels.forEach((p, pi) => allPanels.push({ p, gi, pi })));
-    const out = geoms.map(g => new Float32Array(g.panels.reduce((s, p) => s + p.cells.length, 0)));
+    const out = geoms.map(g => {
+      const n = g.panels.reduce((s, p) => s + p.cells.length, 0);
+      return { trans: new Float32Array(n), hit: detail ? new Int16Array(n).fill(HIT.AWAY) : null, dist: detail ? new Float32Array(n).fill(Infinity) : null };
+    });
     if (sun.alt <= 0) return out;
+    const subs = [];
+    for (let a = 0; a < ns; a++) for (let b = 0; b < ns; b++) subs.push([(a + 0.5) / ns - 0.5, (b + 0.5) / ns - 0.5]);
     geoms.forEach((g, gi) => {
       let k = 0;
+      const R = out[gi];
       g.panels.forEach((panel, pi) => {
         const ci = cosIncidence(sunVec, panel.n);
         if (ci <= 0) { k += panel.cells.length; return; }
-        // horizon (3D tiles) at panel level
-        const horizonBlocked = horizonFn ? horizonFn(gi, pi, sun.az, sun.alt) : false;
-        // candidate occluder panels: lie toward the sun within corridor
+        const tilesBlocked = ch.tiles && horizonFn ? horizonFn(gi, pi, sun.az, sun.alt) : false;
+        // candidates within the corridor toward the sun
         const cand = [];
-        for (const q of allPanels) {
+        if (ch.panels) for (const q of allPanels) {
           if (q.p === panel) continue;
           const dx = q.p.c[0] - panel.c[0], dy = q.p.c[1] - panel.c[1], dz = q.p.c[2] - panel.c[2];
           const along = dx * sunVec[0] + dy * sunVec[1] + dz * sunVec[2];
           if (along <= -1) continue;
           const px = dx - along * sunVec[0], py = dy - along * sunVec[1], pz = dz - along * sunVec[2];
-          const perp = Math.sqrt(px * px + py * py + pz * pz);
-          const reach = Math.hypot(panel.hu, panel.hv) + Math.hypot(q.p.hu, q.p.hv) + 0.05;
-          if (perp <= reach) cand.push(q.p);
+          if (Math.sqrt(px * px + py * py + pz * pz) <= Math.hypot(panel.hu, panel.hv) + Math.hypot(q.p.hu, q.p.hv) + 0.05) cand.push(q.p);
         }
-        const candObj = objects.filter(o => {
+        const candObj = [];
+        if (ch.objects) objects.forEach((o, oi) => {
           const hz = o.dims.height / 2;
           const dx = o.x - panel.c[0], dy = o.y - panel.c[1], dz = o.z + hz - panel.c[2];
           const along = dx * sunVec[0] + dy * sunVec[1] + dz * sunVec[2];
           const br = Math.hypot(o.dims.length / 2, (o.dims.width ?? o.dims.length) / 2, hz) + Math.hypot(panel.hu, panel.hv);
-          if (along < -br) return false;
+          if (along < -br) return;
           const px = dx - along * sunVec[0], py = dy - along * sunVec[1], pz = dz - along * sunVec[2];
-          return Math.hypot(px, py, pz) <= br;
+          if (Math.hypot(px, py, pz) <= br) candObj.push(oi);
         });
+        const cu = panel.cw || panel.hu * 2, cv = panel.ch || panel.hv * 2; // cell size for the sub-rays
         for (const cell of panel.cells) {
-          if (horizonBlocked) { out[gi][k++] = 0; continue; }
-          const o = [cell.p[0] + panel.n[0] * offset, cell.p[1] + panel.n[1] * offset, cell.p[2] + panel.n[2] * offset];
-          let tr = 1;
-          for (const q of cand) { if (rayRect(o, sunVec, q.c, q.u, q.v, q.n, q.hu, q.hv) !== Infinity) { tr = 0; break; } }
-          if (tr > 0) for (const ob of candObj) { tr = Math.min(tr, objectTransmission(ob, o, sunVec)); if (tr === 0) break; }
-          out[gi][k++] = tr;
+          if (tilesBlocked) { R.trans[k] = 0; if (detail) { R.hit[k] = HIT.TILES; R.dist[k] = Infinity; } k++; continue; }
+          let sumT = 0, bestHit = HIT.CLEAR, bestD = Infinity, bestLoss = 0;
+          for (const [su, sv] of subs) {
+            const ox = cell.p[0] + panel.n[0] * offset + (ns > 1 ? panel.u[0] * su * cu + panel.v[0] * sv * cv : 0);
+            const oy = cell.p[1] + panel.n[1] * offset + (ns > 1 ? panel.u[1] * su * cu + panel.v[1] * sv * cv : 0);
+            const oz = cell.p[2] + panel.n[2] * offset + (ns > 1 ? panel.u[2] * su * cu + panel.v[2] * sv * cv : 0);
+            const o = [ox, oy, oz];
+            let tr = 1, hit = HIT.CLEAR, dist = Infinity;
+            for (const q of cand) { const t = rayRect(o, sunVec, q.c, q.u, q.v, q.n, q.hu, q.hv); if (t !== Infinity) { tr = 0; hit = HIT.PANEL; dist = Math.min(dist, t); if (!detail) break; } }
+            if (tr > 0 || detail) {
+              let nearest = Infinity, nearestObj = -1;
+              for (const oi of candObj) {
+                const r = objectTrace(objects[oi], o, sunVec); if (!r) continue;
+                if (hit !== HIT.PANEL) tr *= r.trans;
+                if (r.t < nearest) { nearest = r.t; nearestObj = oi; }
+                if (tr === 0 && !detail) break;
+              }
+              if (hit !== HIT.PANEL && nearestObj >= 0) { hit = nearestObj; dist = nearest; }
+            }
+            sumT += tr;
+            if (detail && 1 - tr > bestLoss) { bestLoss = 1 - tr; bestHit = hit; bestD = dist; }
+          }
+          R.trans[k] = sumT / subs.length;
+          if (detail) { R.hit[k] = bestLoss > 0 ? bestHit : HIT.CLEAR; R.dist[k] = bestLoss > 0 ? bestD : Infinity; }
+          k++;
         }
       });
     });
     return out;
+  }
+  /** Beam transmission per cell (0..1) for each array: the trace without hit details */
+  function shadeCells(geoms, objects, sunVec, sun, horizonFn, opts = {}) {
+    return traceCells(geoms, objects, sunVec, sun, horizonFn, { ...opts, detail: false }).map(r => r.trans);
+  }
+  /**
+   * Who takes the beam: weights per cause from detailed traces. Each cell counts its lost fraction × cell area
+   * × cos(incidence), so the weights split a power loss in proportion to blocked beam. Returns Map(code → weight)
+   * where code is an object index (≥ 0), HIT.PANEL or HIT.TILES; plus the total.
+   */
+  function shadeAttribution(geoms, traces, sunVec) {
+    const by = new Map(); let total = 0;
+    geoms.forEach((g, gi) => {
+      const R = traces[gi]; if (!R || !R.hit) return; let k = 0;
+      g.panels.forEach(p => {
+        const w0 = Math.max(0, cosIncidence(sunVec, p.n)) * p.area / p.cells.length;
+        for (let c = 0; c < p.cells.length; c++, k++) {
+          const lost = 1 - R.trans[k], h = R.hit[k];
+          if (lost <= 0 || h === HIT.CLEAR || h === HIT.AWAY || w0 <= 0) continue;
+          const w = lost * w0; by.set(h, (by.get(h) || 0) + w); total += w;
+        }
+      });
+    });
+    return { by, total };
   }
 
   /** Horizon profile lookup: profile = Float32Array of obstruction elevation (rad) per azimuth bin */
@@ -463,8 +524,8 @@
     meanExtraterrestrialHorizontal, panelNormal, cosIncidence, DEFAULT_PARAMS, MODELS, MODEL_KEYS, seasonalModel,
     kastenHorizontal, transposeHDKR, transposeIsotropic, transposeBalint,
     convectiveCoeff, efficiency, thermalStep, thermalEquilibrium,
-    rayBox, raySphere, rayEllipsoid, rayCylinder, rayCone, rayRect, OBJECT_TYPES, objectTransmission,
-    buildArrayGeometry, shadeCells, horizonBlocked, metrics
+    rayBox, raySphere, rayEllipsoid, rayCylinder, rayCone, rayRect, OBJECT_TYPES, objectTransmission, objectTrace,
+    buildArrayGeometry, shadeCells, traceCells, shadeAttribution, HIT, horizonBlocked, metrics
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ArienPhysics = api;

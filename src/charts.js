@@ -65,6 +65,7 @@
       const g = chart.ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom); g.addColorStop(0, 'rgba(243,178,60,0.45)'); g.addColorStop(1, 'rgba(243,178,60,0.02)'); return g;
     };
     const ds = [{ type: 'line', label: 'Solar power', data: o.xs.map((x, i) => ({ x, y: o.ys[i] })), borderColor: p.sun, backgroundColor: ctxFill, fill: 'origin', borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, yAxisID: 'y' }];
+    if (o.free) ds.push({ type: 'line', label: 'Without shading', data: o.xs.map((x, i) => ({ x, y: o.free[i] })), borderColor: 'rgba(243,178,60,0.7)', borderDash: [5, 4], borderWidth: 1.4, pointRadius: 0, tension: 0.3, yAxisID: 'y' });
     if (o.load) ds.push({ type: 'line', label: 'Typical home use', data: o.xs.map((x, i) => ({ x, y: o.load[i] })), borderColor: 'rgba(227,235,240,0.55)', borderDash: [4, 3], borderWidth: 1.3, pointRadius: 0, tension: 0.3, yAxisID: 'y' });
     if (o.cloud) ds.push({ type: 'line', label: 'Cloud cover', data: o.xs.map((x, i) => ({ x, y: o.cloud[i] })), borderColor: 'rgba(108,195,232,0.6)', borderWidth: 1.2, pointRadius: 0, tension: 0.3, yAxisID: 'y2' });
     const opt = options(p, { ...o, legend: true, xTime: true, xMin: o.xMin, xMax: o.xMax, xStep: 3 * 3600000, xTick: (v) => hh(v), yTitle: 'kW',

@@ -36,7 +36,8 @@
     params: clone(PH.DEFAULT_PARAMS), thermalCa: 9600,
     visuals: 'high', shadowsOn: true, colourMode: 'real',
     sim: { lastT: null, T: {}, energyWh: 0, lastW: null, lastRes: null, playing: false },
-    shade: { dirty: true, lastSun: null, trans: [], useTiles: false, profiles: {}, step: 10, scope: 'array' },
+    shade: { dirty: true, lastSun: null, trans: [], traces: null, useTiles: false, profiles: {}, step: 10, scope: 'array',
+      samples: 1, channels: { panels: true, objects: true }, showTraces: false },
     run: null, placing: null, zones: [], designName: '', view: 'twin', forecastRes: null, yieldRes: null, yearWx: null,
     finance: {}
   };
@@ -89,7 +90,8 @@
   function sceneSnapshot() {
     return { v: 1, site: { name: state.site.name, lat: state.site.lat, lon: state.site.lon }, worldSrc: state.world.src,
       arrays: state.arrays, objects: state.objects, zones: state.zones, designName: state.designName, finance: state.finance, live: state.live, compare: state.compare, params: state.params, thermalCa: state.thermalCa,
-      visuals: state.visuals, shadowsOn: state.shadowsOn, colourMode: state.colourMode };
+      visuals: state.visuals, shadowsOn: state.shadowsOn, colourMode: state.colourMode,
+      shadeOpts: { samples: state.shade.samples, channels: state.shade.channels } };
   }
   function applySnapshot(s) {
     if (!s || s.v !== 1) return false;
@@ -107,6 +109,7 @@
     if (s.visuals) state.visuals = s.visuals;
     if (typeof s.shadowsOn === 'boolean') state.shadowsOn = s.shadowsOn;
     if (s.colourMode) state.colourMode = s.colourMode;
+    if (s.shadeOpts) { state.shade.samples = s.shadeOpts.samples === 2 ? 2 : 1; state.shade.channels = { panels: true, objects: true, ...(s.shadeOpts.channels || {}) }; }
     if (s.worldSrc) state.world.src = s.worldSrc;
     return true;
   }
@@ -617,8 +620,8 @@
   }
   function commitItem(kind, it) {
     if (kind === 'array') buildArrayPrimitive(it); else updateObjectMatrix(it);
-    state.shade.dirty = true; clearProfiles(it);
-    fillEditors(); saveSoon(); simulateNow(true); drawSunPath();
+    state.shade.dirty = true; clearProfiles(it); state.run = null;
+    fillEditors(); saveSoon(); simulateNow(true); drawSunPath(); designChanged();
   }
   function startPlacing(p) {
     state.placing = p;
@@ -643,7 +646,7 @@
     } else {
       const o = defaultObject(pl.type, p[0], p[1], p[2]); state.objects.push(o); buildObjectModel(o); select('object', o.id, true);
     }
-    state.shade.dirty = true; refreshLists(); saveSoon(); simulateNow(true); drawSunPath();
+    state.shade.dirty = true; state.run = null; refreshLists(); saveSoon(); simulateNow(true); drawSunPath(); designChanged();
   }
   // measuring: two clicks on the 3D world, results in metres
   let measureEnts = [];
@@ -690,14 +693,14 @@
     if (state.sel.kind === 'array') { const r = arrayPrims.get(it.id); if (r) { scene.primitives.remove(r.prim); if (r.low) scene.primitives.remove(r.low); } arrayPrims.delete(it.id); geoms.delete(it.id); state.arrays = state.arrays.filter(a => a !== it); delete state.shade.profiles[it.id]; }
     else { removeObjectModel(it.id); state.objects = state.objects.filter(o => o !== it); clearProfiles(); }
     toast(`Removed ${state.sel.kind === 'array' ? it.name : PH.OBJECT_TYPES[it.type].label}.`);
-    select(null); state.shade.dirty = true; saveSoon(); simulateNow(true); state.run = null;
+    select(null); state.shade.dirty = true; saveSoon(); simulateNow(true); state.run = null; designChanged();
   }
   function duplicateSelected() {
     const it = selItem(); if (!it) return;
     const c = clone(it); c.id = newId(state.sel.kind === 'array' ? 'a' : 'o'); c.x += 2; c.y += 2;
     if (state.sel.kind === 'array') { c.name = it.name + ' copy'; state.arrays.push(c); buildArrayPrimitive(c); select('array', c.id); }
     else { state.objects.push(c); buildObjectModel(c); select('object', c.id); }
-    state.shade.dirty = true; saveSoon(); simulateNow(true);
+    state.shade.dirty = true; state.run = null; saveSoon(); simulateNow(true); designChanged();
   }
   function nudgeSelected(dx, dy, dz, dh, ds) {
     const it = selItem(); if (!it) return;
@@ -705,17 +708,18 @@
     if (dh) { if (state.sel.kind === 'array') it.azimuth = ((it.azimuth + dh) % 360 + 360) % 360; else it.heading = ((it.heading + dh) % 360 + 360) % 360; }
     if (ds && state.sel.kind === 'object') { it.dims.length *= ds; if (it.dims.width != null) it.dims.width *= ds; it.dims.height *= ds; }
     if (state.sel.kind === 'array') buildArrayPrimitive(it); else if (ds) rebuildObjectSoon(it); else updateObjectMatrix(it);
-    state.shade.dirty = true; clearProfiles(it); fillEditors(); saveSoon(); simulateNow(true); drawSunPath();
+    state.shade.dirty = true; clearProfiles(it); state.run = null; fillEditors(); saveSoon(); simulateNow(true); drawSunPath(); designChanged();
   }
   function onKey(e) {
     if (inputTarget(e)) { if (e.key === 'Escape') e.target.blur(); return; }
-    if (!viewer || !$('#boot').classList.contains('gone')) return;
+    if (!viewer || !$('#boot').classList.contains('gone') || state.view !== 'twin') return;
     const k = e.key;
+    if (k === 't' || k === 'T') { setTraces(!state.shade.showTraces); return; }
     if (k === 'Escape') { if (state.placing) stopPlacing(); else if (!$('#drawer').hidden) closeDrawer(); else select(null); return; }
     if (k === ' ') { e.preventDefault(); togglePlay(); return; }
     if (k === 'd' || k === 'D') { toggleDash(); return; }
     if (k === 'v' || k === 'V') { toggleVisuals(); return; }
-    const n = Number(k); if (n >= 1 && n <= 8 && !e.altKey && !e.ctrlKey && !e.metaKey) { const btn = $$('#rail button')[n - 1]; if (btn) btn.click(); return; }
+    const n = Number(k); if (n >= 1 && n <= 8 && !e.altKey && !e.ctrlKey && !e.metaKey) { const btn = $$('#rail button[data-panel]')[n - 1]; if (btn) btn.click(); return; }
     if (!state.sel) return;
     const step = e.shiftKey ? 1 : 0.1;
     const map = { ArrowLeft: [-step, 0, 0], ArrowRight: [step, 0, 0], ArrowUp: [0, step, 0], ArrowDown: [0, -step, 0], PageUp: [0, 0, step], PageDown: [0, 0, -step] };
@@ -760,9 +764,109 @@
     const last = state.shade.lastSun;
     if (!force && !state.shade.dirty && last && Math.abs(last.alt - sun.alt) < 0.003 && Math.abs(last.az - sun.az) < 0.003) return;
     const gs = state.arrays.map(a => geoms.get(a.id) || geomFor(a));
-    state.shade.trans = PH.shadeCells(gs, state.objects, sunVec, sun, horizonFn());
+    const tr = PH.traceCells(gs, state.objects, sunVec, sun, horizonFn(), { ...traceOpts(), detail: true });
+    state.shade.traces = tr; state.shade.trans = tr.map(r => r.trans); state.shade.gs = gs; state.shade.sunVec = sunVec; state.shade.sun = sun;
     state.shade.lastSun = { alt: sun.alt, az: sun.az }; state.shade.dirty = false;
     if (state.colourMode === 'map') paintCells();
+    renderShadeNow();
+    if (state.shade.showTraces) drawTraces();
+  }
+  // ------------------------------------------------------------------ line traces to the sun (per cell, by channel)
+  const TRACE_COL = { clear: '#69c38a', object: '#e5675c', partial: '#f3b23c', panel: '#ff9f43', tiles: '#a594f9', through: '#f3b23c' };
+  let traceLayer = null, lastTraceDraw = 0, traceTimer = null;
+  function ensureTraceLayer() {
+    if (traceLayer || !scene) return traceLayer;
+    const lines = scene.primitives.add(new Cesium.PolylineCollection()), points = scene.primitives.add(new Cesium.PointPrimitiveCollection());
+    const mats = {};
+    for (const [k, c] of Object.entries(TRACE_COL)) mats[k] = Cesium.Material.fromType('Color', { color: Cesium.Color.fromCssColorString(c).withAlpha(k === 'clear' ? 0.42 : k === 'through' ? 0.3 : 0.95) });
+    traceLayer = { lines, points, mats, pl: [], pt: [] };
+    return traceLayer;
+  }
+  function hideTraces() { if (!traceLayer) return; traceLayer.pl.forEach(l => { l.show = false; }); traceLayer.pt.forEach(p => { p.show = false; }); }
+  function setTraces(on) {
+    state.shade.showTraces = !!on; $('#sh-traces').checked = !!on; $('#btn-traces').setAttribute('aria-pressed', String(!!on));
+    if (on) { state.shade.dirty = true; simulateNow(true); if (!state.wx.series) drawTraces(); toast('Line traces on: each cell traced toward the sun (T to hide).', 'info', 3500); }
+    else { hideTraces(); $('#sh-trace-note').textContent = ''; }
+  }
+  /** Draw each cell's trace: green clear, red blocked (with the hit point), amber through a canopy, orange another panel, violet the 3D tiles */
+  function drawTraces() {
+    if (!state.shade.showTraces || !scene) return;
+    const now = performance.now();
+    if (now - lastTraceDraw < 180) { clearTimeout(traceTimer); traceTimer = setTimeout(drawTraces, 200); return; }
+    lastTraceDraw = now;
+    const L = ensureTraceLayer(), tr = state.shade.traces, gs = state.shade.gs, sv = state.shade.sunVec, sun = state.shade.sun;
+    let li = 0, pi_ = 0, shown = 0;
+    const line = (a, b, kind, width) => {
+      let l = L.pl[li]; if (!l) { l = L.lines.add({ positions: [a, b], width, material: L.mats[kind] }); L.pl[li] = l; }
+      else { l.positions = [a, b]; l.width = width; if (l.material !== L.mats[kind]) l.material = L.mats[kind]; l.show = true; }
+      li++;
+    };
+    const point = (c, kind) => {
+      let p = L.pt[pi_]; const col = Cesium.Color.fromCssColorString(TRACE_COL[kind]);
+      if (!p) { p = L.points.add({ position: c, pixelSize: 5, color: col, outlineColor: Cesium.Color.BLACK, outlineWidth: 1 }); L.pt[pi_] = p; }
+      else { p.position = c; p.color = col; p.show = true; }
+      pi_++;
+    };
+    if (tr && gs && sun && sun.alt > 0) {
+      const total = gs.reduce((t, g) => t + g.panels.reduce((u, p) => u + p.cells.length, 0), 0), every = Math.max(1, Math.ceil(total / 2400));
+      const len = Math.max(8, Math.min(40, 6 / Math.max(0.15, Math.sin(sun.alt))));
+      gs.forEach((g, gi) => {
+        let k = 0;
+        g.panels.forEach(p => {
+          const facing = PH.cosIncidence(sv, p.n) > 0;
+          p.cells.forEach(cell => {
+            const idx = k++; if (!facing || idx % every) return;
+            const o = [cell.p[0] + p.n[0] * 0.03, cell.p[1] + p.n[1] * 0.03, cell.p[2] + p.n[2] * 0.03];
+            const t = tr[gi].trans[idx], h = tr[gi].hit[idx], d = tr[gi].dist[idx];
+            const kind = h === PH.HIT.CLEAR ? 'clear' : h === PH.HIT.PANEL ? 'panel' : h === PH.HIT.TILES ? 'tiles' : (t > 0 ? 'partial' : 'object');
+            const end = (kind === 'clear' || kind === 'tiles' || !isFinite(d)) ? len : d;
+            const a = enu2ecef(o[0], o[1], o[2]), b = enu2ecef(o[0] + sv[0] * end, o[1] + sv[1] * end, o[2] + sv[2] * end);
+            line(a, b, kind, kind === 'clear' ? 1 : 1.8); shown++;
+            if (kind === 'object' || kind === 'partial' || kind === 'panel') point(b, kind);
+            if (kind === 'partial') line(b, enu2ecef(o[0] + sv[0] * (end + len * 0.7), o[1] + sv[1] * (end + len * 0.7), o[2] + sv[2] * (end + len * 0.7)), 'through', 1);
+          });
+        });
+      });
+      $('#sh-trace-note').textContent = `${shown.toLocaleString()} line traces${every > 1 ? ` (every ${every}th cell)` : ''} toward the sun at ${(sun.alt * R2D).toFixed(1)}° elevation, ${(sun.az * R2D).toFixed(0)}° azimuth, ${state.shade.samples === 2 ? '4 rays per cell (2×2, the worst drawn)' : 'one ray from each cell centre'}.`;
+    } else $('#sh-trace-note').textContent = sun && sun.alt <= 0 ? 'The sun is below the horizon: nothing to trace.' : 'Load weather to place the sun.';
+    for (let i = li; i < L.pl.length; i++) L.pl[i].show = false;
+    for (let i = pi_; i < L.pt.length; i++) L.pt[i].show = false;
+  }
+  /** Live readout: how many cells are shaded now, how much direct sun the panels lose, and to what */
+  function renderShadeNow() {
+    const el = $('#sh-now'); if (!el) return;
+    const tr = state.shade.traces, gs = state.shade.gs, sv = state.shade.sunVec, sun = state.shade.sun;
+    if (!tr || !gs || !sun) { el.innerHTML = ''; return; }
+    if (sun.alt <= 0) { el.innerHTML = '<span class="hint">Sun below the horizon.</span>'; return; }
+    let cells = 0, shaded = 0, partial = 0, w = 0, wl = 0;
+    gs.forEach((g, gi) => { let k = 0; g.panels.forEach(p => { const ci = Math.max(0, PH.cosIncidence(sv, p.n)), cw = ci * p.area / p.cells.length; p.cells.forEach(() => {
+      const t = tr[gi].trans[k++]; if (ci <= 0) return; cells++; if (t < 0.999) { shaded++; if (t > 0.001) partial++; } w += cw; wl += cw * (1 - t); }); }); });
+    const at = PH.shadeAttribution(gs, tr, sv);
+    const causes = [...at.by].map(([h, v]) => ({ label: hitterLabel(hitterKey(h)), share: w > 0 ? v / w : 0 })).sort((a, b) => b.share - a.share).slice(0, 4);
+    el.innerHTML = `<div class="tn-head"><b>${shaded.toLocaleString()}</b> of ${cells.toLocaleString()} cells shaded${partial ? ` (${partial} partly)` : ''} · direct sun lost <b>${w > 0 ? (wl / w * 100).toFixed(1) : '0.0'}%</b></div>`
+      + (causes.length ? `<ul>${causes.map(c => `<li><span>${escapeHtml(c.label)}</span><b>${(c.share * 100).toFixed(1)}%</b></li>`).join('')}</ul>` : '<p class="hint">Every cell sees the sun right now.</p>');
+  }
+  /** Line-trace settings shared by the live view, forecasts and the yield */
+  const traceOpts = () => ({ samples: state.shade.samples, channels: { panels: state.shade.channels.panels !== false, objects: state.shade.channels.objects !== false, tiles: true } });
+  /** Stable key for what blocked a cell: an obstacle id, other panels, or the 3D tiles */
+  const hitterKey = (code, objects = state.objects) => code >= 0 ? 'o:' + (objects[code] ? objects[code].id : code) : code === PH.HIT.PANEL ? 'panel' : 'tiles';
+  function hitterLabel(key) {
+    if (key === 'panel') return 'Other panels (row-to-row)';
+    if (key === 'tiles') return 'Buildings, terrain and trees in the 3D tiles';
+    const o = state.objects.find(x => 'o:' + x.id === key); if (!o) return 'Removed obstacle';
+    const T = PH.OBJECT_TYPES[o.type];
+    // where it stands relative to the middle of the panels
+    const cs = state.arrays.flatMap(a => (geoms.get(a.id) || geomFor(a)).panels.map(p => p.c));
+    let where = '';
+    if (cs.length) { const cx = cs.reduce((t, c) => t + c[0], 0) / cs.length, cy = cs.reduce((t, c) => t + c[1], 0) / cs.length;
+      const dx = o.x - cx, dy = o.y - cy, d = Math.hypot(dx, dy); if (d > 1) where = `, ${Math.round(d)} m ${PL.facingWord(Math.atan2(dx, dy) * R2D)}`; }
+    const tr = T.porous && o.porosity > 0 ? `, ${Math.round(o.porosity * 100)}% transparent` : '';
+    return `${T.label} ${o.dims.height.toFixed(1)} m${where}${tr}`;
+  }
+  /** Sum per-step losses (kW, at stepH hours) per cause over the chosen steps → [{key, label, kwh}] largest first */
+  function lossesByCause(lostBy, idx, stepH) {
+    return Object.entries(lostBy || {}).map(([key, arr]) => ({ key, label: hitterLabel(key), kwh: idx.reduce((t, i) => t + (arr[i] || 0), 0) * stepH }))
+      .filter(r => r.kwh > 0.0005).sort((a, b) => b.kwh - a.kwh);
   }
   function horizonFn() {
     if (!state.shade.useTiles) return null;
@@ -825,19 +929,31 @@
     keys.forEach(k => { out.kw[k] = []; out.poa[k] = []; out.tcell[k] = []; });
     const Ts = {}; keys.forEach(k => { Ts[k] = {}; });
     const gs = state.arrays.map(a => geoms.get(a.id) || geomFor(a));
-    const hz = horizonFn();
+    const hz = horizonFn(), topt = { ...traceOpts(), detail: true }, Tfree = {};
     const nSteps = Math.floor((t1 - t0) / step) + 1;
+    out.kwFree = []; out.lostBy = {}; out.shadedShare = [];
     const started = performance.now();
     let i = 0, lastYield = started;
     for (let t = t0; t <= t1; t += step, i++) {
       const w = WX.sample(s, t, state.site.lat, state.site.lon);
       const sunVec = PH.sunVectorENU(w.sun.alt, w.sun.az);
-      const trans = PH.shadeCells(gs, state.objects, sunVec, w.sun, hz);
+      const tr = PH.traceCells(gs, state.objects, sunVec, w.sun, hz, topt), trans = tr.map(r => r.trans);
       out.times.push(t); out.cloud.push(w.cloudPct); out.temp.push(w.temp); out.ghi.push(w.api.ghi); out.sunAlt.push(w.sun.alt);
       for (const k of keys) {
         const r = computePower(k, w, sunVec, trans, Ts[k], i === 0 ? null : step / 1000);
         out.kw[k].push(r.kw); out.poa[k].push(r.poa); out.tcell[k].push(r.tcell);
       }
+      // the same step with nothing in the way: the difference is the shading loss, split by what each trace hit
+      const free = computePower(state.live, w, sunVec, [], Tfree, i === 0 ? null : step / 1000);
+      out.kwFree.push(free.kw);
+      const lost = Math.max(0, free.kw - out.kw[state.live][i]);
+      let share = 0;
+      if (lost > 1e-6) {
+        const at = PH.shadeAttribution(gs, tr, sunVec);
+        if (at.total > 0) for (const [h, wgt] of at.by) { const key = hitterKey(h); (out.lostBy[key] || (out.lostBy[key] = new Float32Array(nSteps)))[i] += lost * wgt / at.total; }
+        share = lost / Math.max(free.kw, 1e-9);
+      }
+      out.shadedShare.push(share);
       if (performance.now() - lastYield > 120) { btn.lastChild.textContent = ` ${Math.round(i / nSteps * 100)}%`; await breathe(); lastYield = performance.now(); }
     }
     out.energy = {}; out.peak = {};
@@ -1467,7 +1583,7 @@ void main() {
   let objTimer = null;
   function afterObjectEdit(o, live) {
     clearTimeout(objTimer);
-    const go = () => { state.shade.dirty = true; state.run = null; refreshLists(); saveSoon(); simulateNow(true); drawSunPath(); };
+    const go = () => { state.shade.dirty = true; state.run = null; refreshLists(); saveSoon(); simulateNow(true); drawSunPath(); designChanged(); };
     if (live) objTimer = setTimeout(go, 100); else go();
   }
 
@@ -1642,9 +1758,10 @@ void main() {
   const finAssume = () => ({ ...(window.ArienFinance ? ArienFinance.DEFAULTS : { systemLosses: 14, firstYearDegradation: 1 }), ...state.finance });
   const acFactor = (year = true) => { const a = finAssume(); return (1 - a.systemLosses / 100) * (year ? 1 - a.firstYearDegradation / 100 : 1); };
   /** Next 7 days with the live model: daily kWh from the forecast run */
-  async function forecastWeek() {
-    if (!state.arrays.length) { toast('Place panels first.', 'warn'); return null; }
+  async function forecastWeek(auto = false) {
+    if (!state.arrays.length) { if (!auto) toast('Place panels first.', 'warn'); return null; }
     const isFc = state.wx.series && (state.wx.series.mode === 'forecast' || state.wx.series.mode === 'current') && state.wx.mode === 'forecast';
+    if (auto && !isFc) return null;
     if (!isFc) { wxSetMode('forecast'); const r = await loadWeather(true); if (!r || !r.ok) { toast(r ? r.msg : 'Weather did not load.', 'err'); return null; } }
     if (!state.run || !state.run.keys.includes(state.live)) await runPeriod(true);
     const run = state.run; if (!run) return null;
@@ -1658,8 +1775,11 @@ void main() {
     const list = [...days].map(([t, kwh]) => ({ t, kwh })).filter(d => d.t < today + 7 * 86400000);
     const s = state.wx.series;
     const keep = run.times.map((t, i) => i).filter(i => run.times[i] >= today && run.times[i] < today + 7 * 86400000);
+    const freeKWh = keep.reduce((t, i) => t + (run.kwFree ? run.kwFree[i] : run.kw[k][i]), 0) * 0.25, gotKWh = keep.reduce((t, i) => t + run.kw[k][i], 0) * 0.25;
     const res = { kind: 'forecast', model: k, days: list, total: list.reduce((a, b) => a + b.kwh, 0), kwp: totalKwp(), source: s.source, cached: !!s.fromCache, at: Date.now(),
-      series: { times: keep.map(i => run.times[i]), kw: keep.map(i => run.kw[k][i]), cloud: keep.map(i => run.cloud[i]) } };
+      series: { times: keep.map(i => run.times[i]), kw: keep.map(i => run.kw[k][i]), cloud: keep.map(i => run.cloud[i]), kwFree: keep.map(i => run.kwFree ? run.kwFree[i] : run.kw[k][i]) },
+      shading: { freeKWh, lostKWh: Math.max(0, freeKWh - gotKWh), pct: freeKWh > 0 ? Math.max(0, freeKWh - gotKWh) / freeKWh : 0, by: lossesByCause(run.lostBy, keep, 0.25),
+        samples: state.shade.samples, objects: state.objects.length } };
     state.forecastRes = res; renderResults();
     return res;
   }
@@ -1706,21 +1826,26 @@ void main() {
     const cache = new Map(), nP = gs.reduce((t, g) => t + g.panels.length, 0);
     const binAz = opt.binAz || (nP > 150 ? 3 : 1.5), binAlt = opt.binAlt || (nP > 150 ? 1.5 : 0.75); // degrees: shading is reused within a bin
     const off = s.utcOffset * 1000; let lastYield = performance.now(), prevDay = false;
-    const unshadedTrans = [], hourly = new Float64Array(s.time.length); // live model, kWh in each hour (DC)
+    const unshadedTrans = [], hourly = new Float64Array(s.time.length), lostBy = {}; // live model, kWh in each hour (DC); shading loss by cause
     for (let i = 0; i < s.time.length; i++) {
       const t = s.time[i] - 1800000; // radiation is the mean of the hour ending at time[i]
       const w = WX.sample(s, t, state.site.lat, state.site.lon);
       if (w.sun.alt <= 0.005) { if (prevDay) { keys.forEach(k => { TsS[k] = {}; TsU[k] = {}; }); prevDay = false; } continue; }
       const sunVec = PH.sunVectorENU(w.sun.alt, w.sun.az);
       const bk = `${Math.round(w.sun.az * R2D / binAz)}|${Math.round(w.sun.alt * R2D / binAlt)}`;
-      let trans = cache.get(bk);
-      if (!trans) { trans = PH.shadeCells(gs, objects, sunVec, w.sun, hz); cache.set(bk, trans); }
+      let hitC = cache.get(bk);
+      if (!hitC) { const tr = PH.traceCells(gs, objects, sunVec, w.sun, hz, { ...traceOpts(), detail: true }); hitC = { trans: tr.map(r => r.trans), at: PH.shadeAttribution(gs, tr, sunVec) }; cache.set(bk, hitC); }
+      const trans = hitC.trans;
       const m = new Date(t + off).getUTCMonth();
       for (const k of keys) {
         const r1 = computePower(k, w, sunVec, trans, TsS[k], prevDay ? 3600 : null, arrs, gs);
         const r0 = computePower(k, w, sunVec, unshadedTrans, TsU[k], prevDay ? 3600 : null, arrs, gs);
         month[k][m] += r1.kw; total[k] += r1.kw; unshaded[k] += r0.kw;
-        if (k === keys[0]) hourly[i] = r1.kw;
+        if (k === keys[0]) {
+          hourly[i] = r1.kw;
+          const lost = r0.kw - r1.kw;
+          if (lost > 1e-6 && hitC.at.total > 0) for (const [h, wgt] of hitC.at.by) { const key = hitterKey(h, objects); lostBy[key] = (lostBy[key] || 0) + lost * wgt / hitC.at.total; }
+        }
       }
       prevDay = true;
       if (performance.now() - lastYield > 100) { if (onProgress) onProgress(i / s.time.length); if (!quiet) setResultsBusy(`Estimating yield: ${Math.round(i / s.time.length * 100)}%`); await breathe(); lastYield = performance.now(); }
@@ -1731,7 +1856,9 @@ void main() {
     return { kind: 'yield', model: k, months: month[k].map(v => v * scale), total: total[k] * scale, kwp, specific: kwp ? total[k] * scale / kwp : 0,
       shadingLoss: unshaded[k] > 0 ? 1 - total[k] / unshaded[k] : 0, perModel: Object.fromEntries(keys.map(x => [x, total[x] * scale])),
       start: s.start, end: s.end, source: s.source, cached: !!s.fromCache, tiles: !!hz, at: Date.now(),
-      hourly: { times: s.time.slice(), kwh: Array.from(hourly), scale, utcOffset: s.utcOffset * 1000 } };
+      hourly: { times: s.time.slice(), kwh: Array.from(hourly), scale, utcOffset: s.utcOffset * 1000 },
+      shadingBy: Object.entries(lostBy).map(([key, kwh]) => ({ key, label: hitterLabel(key), kwh: kwh * scale })).filter(r => r.kwh > 0.01).sort((a, b) => b.kwh - a.kwh),
+      unshadedTotal: unshaded[k] * scale, samples: state.shade.samples };
   }
   /** Annual beam-shading loss under clear skies (Kasten, N = 0) on the 21st of each month: quick, for the planner */
   function quickShadingLoss() {
@@ -1744,7 +1871,7 @@ void main() {
       const sun = PH.solarPosition(t, state.site.lat, state.site.lon); if (sun.alt <= 0.02) continue;
       const sunVec = PH.sunVectorENU(sun.alt, sun.az), ctx = { sun, sunVec, N: 0, api: { ghi: 0, dhi: 0, dni: 0 } };
       const hz = M.horizontal(ctx, state.params);
-      const trans = PH.shadeCells(gs, state.objects, sunVec, sun, horizonFn());
+      const trans = PH.shadeCells(gs, state.objects, sunVec, sun, horizonFn(), traceOpts());
       gs.forEach((g, ai) => {
         const tp = M.transpose(hz, ctx, g.n, g.tilt, state.params), tr = trans[ai], a = arrs[ai];
         const cellA = a.panelW * a.panelL / (a.cellsX * a.cellsY);
@@ -1758,9 +1885,17 @@ void main() {
     clearTimeout(lossTimer);
     lossTimer = setTimeout(() => { state.quickLoss = quickShadingLoss(); if (window.ArienPlanner) ArienPlanner.refreshSummary(); renderResults(); }, delay);
   }
+  let fcTimer = null;
+  /** Obstacles or panels changed: re-run the 7-day forecast shortly so shading is in it (fast); the year waits for the dashboard */
+  function refreshForecastSoon() {
+    if (!state.forecastRes || !state.arrays.length) return;
+    clearTimeout(fcTimer);
+    fcTimer = setTimeout(async () => { if (running || yieldBusy) { refreshForecastSoon(); return; } state.run = null; await forecastWeek(true); }, 1400);
+  }
   function designChanged(now) {
+    state.run = null; // any change to panels or obstacles invalidates the period run
     if (state.yieldRes) state.yieldRes.stale = true;
-    if (state.forecastRes) state.forecastRes.stale = true;
+    if (state.forecastRes) { state.forecastRes.stale = true; refreshForecastSoon(); }
     updateQuickLoss(now ? 0 : 350);
     if (window.ArienPlanner && state.view === 'design') ArienPlanner.redraw();
     renderSavedSites();
@@ -1773,14 +1908,15 @@ void main() {
       html += `<div class="result-card${f.stale ? ' stale' : ''}"><div class="rc-head"><span class="eyebrow">Forecast · next 7 days</span>${f.stale ? '<span class="badge warn">design changed</span>' : ''}</div>
         <div class="rc-big"><b>${(f.total * acFactor(false)).toFixed(1)}</b> kWh <small>${(f.total * acFactor(false) / Math.max(1, f.days.length)).toFixed(1)} kWh a day · ${f.kwp.toFixed(2)} kWp · after ${finAssume().systemLosses}% system losses</small></div>
         <div class="rc-chart"><canvas data-chart="forecast" aria-label="kWh per day, next 7 days"></canvas></div>
-        <p class="hint">${escapeHtml(modelLabel(f.model))} · ${escapeHtml(f.source)}${f.cached ? ' (site cache)' : ''}.</p></div>`;
+        ${f.shading && f.shading.lostKWh > 0.05 ? `<p class="hint shade-line">Shading takes <b>${(f.shading.lostKWh * acFactor(false)).toFixed(1)} kWh</b> (${(f.shading.pct * 100).toFixed(1)}%) this week${f.shading.by[0] ? `, most of it ${escapeHtml(f.shading.by[0].label)}` : ''}.</p>` : (state.objects.length ? '<p class="hint shade-line">No shading from the obstacles this week.</p>' : '')}
+        <p class="hint">${escapeHtml(modelLabel(f.model))} · ${escapeHtml(f.source)}${f.cached ? ' (site cache)' : ''}. Every cell traced toward the sun every 15 minutes.</p></div>`;
     }
     if (y) {
       const per = Object.entries(y.perModel).filter(([k]) => k !== y.model).map(([k, v]) => `${modelShort(k)} ${Math.round(v * acFactor()).toLocaleString()}`).join(' · ');
       html += `<div class="result-card${y.stale ? ' stale' : ''}"><div class="rc-head"><span class="eyebrow">Estimated yield · a year</span>${y.stale ? '<span class="badge warn">design changed</span>' : ''}</div>
         <div class="rc-big"><b>${Math.round(y.total * acFactor()).toLocaleString()}</b> kWh <small>${Math.round(y.specific * acFactor()).toLocaleString()} kWh/kWp · shading loss ${(y.shadingLoss * 100).toFixed(1)}% · first year, after ${finAssume().systemLosses}% system losses</small></div>
         <div class="rc-chart"><canvas data-chart="yield" aria-label="kWh per month"></canvas></div>
-        <p class="hint">${escapeHtml(modelLabel(y.model))} on ${escapeHtml(y.source)}, ${fmtDay(y.start)} ${new Date(y.start).getUTCFullYear()} – ${fmtDay(y.end)} ${new Date(y.end).getUTCFullYear()}${y.cached ? ' (site cache)' : ''}, hourly.${per ? ' Other models: ' + escapeHtml(per) + ' kWh.' : ''}${y.tiles ? ' Includes the 3D-tile skyline.' : ' Shading from placed obstacles and panel rows; trace the skyline in the 3D twin to add buildings from the tiles.'} Losses and prices are set in Dashboard → Assumptions.</p></div>`;
+        <p class="hint">${escapeHtml(modelLabel(y.model))} on ${escapeHtml(y.source)}, ${fmtDay(y.start)} ${new Date(y.start).getUTCFullYear()} – ${fmtDay(y.end)} ${new Date(y.end).getUTCFullYear()}${y.cached ? ' (site cache)' : ''}, hourly.${per ? ' Other models: ' + escapeHtml(per) + ' kWh.' : ''}${y.shadingBy && y.shadingBy[0] ? ` Largest shading: ${escapeHtml(y.shadingBy[0].label)}, ${Math.round(y.shadingBy[0].kwh * acFactor()).toLocaleString()} kWh a year.` : ''}${y.tiles ? ' Includes the 3D-tile skyline.' : ' Shading from placed obstacles and panel rows; trace the skyline in the 3D twin to add buildings from the tiles.'} Losses and prices are set in Dashboard → Assumptions.</p></div>`;
     }
     return html;
   }
@@ -1862,6 +1998,7 @@ void main() {
         if (v === 'twin') flyToDesign(1.2);
       },
       newDesign: () => setView('design'),
+      showTraces: () => { setView('twin'); openDrawer('shading'); setTraces(true); flyToDesign(1.2); },
       siteLabel: () => state.designName || suggestedName(),
       weatherSources: () => {
         const f = state.forecastRes, y = state.yieldRes;
@@ -2046,9 +2183,20 @@ void main() {
     // shading
     $('#sh-tiles').addEventListener('change', (e) => {
       if (e.target.checked && !state.arrays.some(a => state.shade.profiles[a.id])) { e.target.checked = false; traceSkyline(); return; }
-      state.shade.useTiles = e.target.checked; state.shade.dirty = true; state.run = null; simulateNow(); drawSunPath(); runPeriod(true);
+      state.shade.useTiles = e.target.checked; state.shade.dirty = true; state.run = null; simulateNow(); drawSunPath(); runPeriod(true); designChanged();
     });
     $('#sh-run').addEventListener('click', traceSkyline);
+    $('#sh-traces').addEventListener('change', (e) => setTraces(e.target.checked));
+    $('#btn-traces').addEventListener('click', () => setTraces(!state.shade.showTraces));
+    const syncTraceUi = () => {
+      $('#sh-ch-panels').checked = state.shade.channels.panels !== false; $('#sh-ch-objects').checked = state.shade.channels.objects !== false;
+      $$('#sh-samples button').forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.v) === state.shade.samples)));
+    };
+    const traceSettingChanged = () => { state.shade.dirty = true; state.run = null; syncTraceUi(); saveSoon(); simulateNow(true); designChanged(); };
+    $('#sh-ch-panels').addEventListener('change', (e) => { state.shade.channels.panels = e.target.checked; traceSettingChanged(); });
+    $('#sh-ch-objects').addEventListener('change', (e) => { state.shade.channels.objects = e.target.checked; traceSettingChanged(); });
+    $('#sh-samples').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; state.shade.samples = Number(b.dataset.v) === 2 ? 2 : 1; traceSettingChanged(); });
+    syncTraceUi();
     $('#sh-colour').addEventListener('click', (e) => {
       const b = e.target.closest('button'); if (!b) return; state.colourMode = b.dataset.v;
       $$('#sh-colour button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); paintCells(); saveSoon();
@@ -2344,7 +2492,7 @@ void main() {
     renderSavedSites(); renderResults();
     if (location.hash === '#design' || location.hash === '#dashboard') { const v = location.hash.slice(1); const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); setView(v); } }, 300); }
     if (location.hash === '#admin') { const go = () => openDrawer('admin'); const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); go(); } }, 400); }
-    window.__arien = { state, viewer: () => viewer, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef, setView, forecastWeek, estimateYield, designSummary, flyToDesign, designBounds,
+    window.__arien = { state, viewer: () => viewer, setTraces, hitterLabel, traceLayer: () => traceLayer, designChanged, rebuild: () => { geoms.clear(); rebuildAll(); }, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef, setView, forecastWeek, estimateYield, designSummary, flyToDesign, designBounds,
       quickShadingLoss, saveNamedSite, listSites, openNamedSite, searchPlaces, suggestedName,
       dropAll: () => dropItems([...state.arrays]),
       yieldDebug: async (o) => runYield(await yearWeather(), null, { quiet: true, ...o, arrays: o.full ? state.arrays.map(a => ({ ...a })) : coarseArrays() }),

@@ -361,7 +361,10 @@
       ['Inverter', 'Not designed yet (system losses assumed instead)'],
       ['Battery', 'None'],
       ['Energy model', `${data.yieldInfo.model}, hourly physics with cell-level shading`],
-      ['Annual DC yield', `${num(data.yieldInfo.dcTotal)} kWh before system losses; shading loss ${num(data.yieldInfo.shadingLoss * 100, 1)}%`]
+      ['Annual DC yield', `${num(data.yieldInfo.dcTotal)} kWh before system losses; shading loss ${num(data.yieldInfo.shadingLoss * 100, 1)}%`],
+      ['Shading, a year', data.shading && data.shading.year.by.length ? data.shading.year.by.slice(0, 4).map(r => `${r.label}: ${num(r.kwh)} kWh`).join('; ') : 'None found'],
+      ['Shading, next 7 days', data.shading && data.shading.week ? `${num(data.shading.week.kwh, 1)} kWh (${num(data.shading.week.pct * 100, 1)}%)${data.shading.week.by[0] ? ', mostly ' + data.shading.week.by[0].label : ''}` : '-'],
+      ['Shading method', `Line trace from every cell toward the sun each hour (year) and 15 minutes (forecast), ${data.shading && data.shading.samples === 2 ? '4 rays per cell' : 'one ray per cell centre'}; opaque obstacles block, canopies pass their transparency${data.shading && data.shading.objects.some(o => o.transparency > 0) ? ' (' + data.shading.objects.filter(o => o.transparency > 0).map(o => `${o.label} ${Math.round(o.transparency * 100)}%`).join(', ') + ')' : ' (all solid)'}; ${data.shading && data.shading.tiles ? '3D-tile skyline included' : '3D tiles not included'}`]
     ];
     y = table(doc, PAGE.m, y, specRows, { widths: [34, W - 34], size: 8.5, boldFirst: true });
     y = h2(doc, 'Monthly yield (first year, after system losses)', y + 4);

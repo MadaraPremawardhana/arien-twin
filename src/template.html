@@ -257,8 +257,8 @@
           </div>
           <div class="split3" id="obj-dims"></div>
           <div class="field"><label for="obj-heading">Rotation <output class="mono" id="obj-heading-out"></output></label><input id="obj-heading" type="range" min="0" max="359" step="1"></div>
-          <div class="field" id="obj-por-wrap"><label for="obj-por">Light through canopy <output class="mono" id="obj-por-out"></output></label><input id="obj-por" type="range" min="0" max="0.9" step="0.05">
-            <p class="hint">0% treats the canopy as solid, as the thesis ray-casting does. Raise it for winter or sparse trees.</p></div>
+          <div class="field" id="obj-por-wrap"><label for="obj-por">Transparency <output class="mono" id="obj-por-out"></output></label><input id="obj-por" type="range" min="0" max="0.9" step="0.05">
+            <p class="hint">Share of direct sun that passes through the canopy. 0% is solid, as the thesis ray-casting treats it; raise it for sparse or leafless trees. The trunk always blocks.</p></div>
           <div class="split3">
             <div class="field"><label for="obj-x">East</label><input id="obj-x" type="number" step="0.1"></div>
             <div class="field"><label for="obj-y">North</label><input id="obj-y" type="number" step="0.1"></div>
@@ -314,6 +314,19 @@
           <label>Panel colours</label>
           <div class="seg small" id="sh-colour"><button data-v="real">Realistic</button><button data-v="map">Direct-sun map</button></div>
         </div>
+        <fieldset class="traces"><legend>Line traces to the sun</legend>
+          <label class="toggle"><input type="checkbox" id="sh-traces"><span>Show the trace from every cell toward the sun (T)</span></label>
+          <div class="trace-key"><span class="k clear">clear</span><span class="k object">blocked by obstacle</span><span class="k partial">through a canopy</span><span class="k panel">another panel</span><span class="k tiles">3D tiles</span></div>
+          <div class="field"><label>Trace against</label>
+            <label class="toggle"><input type="checkbox" id="sh-ch-objects" checked><span>Placed obstacles (trees, hedges, walls, chimneys, buildings, poles)</span></label>
+            <label class="toggle"><input type="checkbox" id="sh-ch-panels" checked><span>Other panels (row-to-row shading)</span></label>
+            <p class="hint">3D tiles: the switch at the top of this panel, after tracing the skyline.</p></div>
+          <div class="field"><label>Rays per cell</label>
+            <div class="seg small" id="sh-samples"><button data-v="1">1 (cell centre, as in the thesis)</button><button data-v="2">4 (2×2: partly shaded cells)</button></div></div>
+          <div class="trace-now" id="sh-now"></div>
+          <p class="hint" id="sh-trace-note"></p>
+          <p class="hint">Forecasts, the period run and the yearly yield trace every cell like this at each step. A cell keeps the share of direct sun its trace lets through: none past walls, buildings, poles and panels; the obstacle's transparency through a tree or hedge canopy (several canopies multiply); with 4 rays, the average over the cell. Diffuse light is not shaded.</p>
+        </fieldset>
         <figure class="sunpath">
           <canvas id="sunpath" width="520" height="520" aria-label="Sun path and skyline for the selected array"></canvas>
           <figcaption><span class="key k-sun"></span>Sun path (selected day) <span class="key k-tile"></span>3D tiles <span class="key k-obj"></span>Obstacles</figcaption>
@@ -406,6 +419,7 @@
     <div class="hud-btns">
       <button class="chip" id="btn-forecast" title="Energy over the next 7 days"><svg><use href="#i-bolt"/></svg>Forecast</button>
       <button class="chip" id="btn-yield" title="Energy over a year of real weather"><svg><use href="#i-bars"/></svg>Est. yield</button>
+      <button class="chip" id="btn-traces" aria-pressed="false" title="Line traces from each cell toward the sun (T)"><svg><use href="#i-shade"/></svg>Traces</button>
     </div>
   </div>
 
@@ -493,6 +507,7 @@
         <div class="pl-obwrap" id="pl-obwrap" hidden>
           <select id="pl-obtype" aria-label="Obstruction type"></select>
           <label class="pl-oh">Height m<input id="pl-ob-h" type="number" min="0.2" max="60" step="0.5"></label>
+          <label class="pl-oh" id="pl-ob-tr-wrap">Transparency %<input id="pl-ob-tr" type="number" min="0" max="90" step="5" value="0" title="Share of direct sun through the canopy; 0 = solid, as in the thesis"></label>
         </div>
       </div>
       <div class="pl-layers" id="pl-layers"><button data-layer="sat" aria-pressed="true">Satellite</button><button data-layer="map">Map</button></div>

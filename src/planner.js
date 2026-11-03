@@ -248,7 +248,11 @@
     if (suppressClick || drawing) return;
     const p = enOf(e.latlng);
     if (tool === 'place') { const a = placeSingle(p[0], p[1]); sel = null; commit(); return a; }
-    if (tool === 'obst') { const o = api.newObject(obType, p[0], p[1]); const h = Number($('#pl-ob-h').value); if (h > 0) { o.dims.height = h; api.updateObject(o, true); } sel = 'o:' + o.id; commit(); return o; }
+    if (tool === 'obst') {
+      const o = api.newObject(obType, p[0], p[1]); const h = Number($('#pl-ob-h').value); if (h > 0) { o.dims.height = h; api.updateObject(o, true); }
+      const tp = Number($('#pl-ob-tr').value); if (PH.OBJECT_TYPES[obType].porous && tp > 0) o.porosity = clamp(tp, 0, 90) / 100;
+      sel = 'o:' + o.id; commit(); return o;
+    }
   }
 
   // ---------------------------------------------------------------- left panel
@@ -281,9 +285,19 @@
     const nGroups = new Set(S.arrays.map(groupKey)).size;
     $('#pl-editing').innerHTML = z ? `Editing <b>${api.escapeHtml(z.name)}</b> · <button class="link" id="pl-desel">whole design</button>`
       : a ? `Editing <b>${api.escapeHtml(a.name)}</b> · <button class="link" id="pl-desel">whole design</button>`
-      : o ? `Selected <b>${PH.OBJECT_TYPES[o.type].label}</b> (${o.dims.height.toFixed(1)} m) · right-click or Delete removes it · <button class="link" id="pl-desel">deselect</button>`
+      : o ? `Selected <b>${PH.OBJECT_TYPES[o.type].label}</b> · right-click or Delete removes it · <button class="link" id="pl-desel">deselect</button>
+          <span class="pl-obj-ed"><label>Height m<input type="number" id="pl-sel-h" min="0.2" max="80" step="0.5" value="${o.dims.height.toFixed(1)}"></label>
+          <label>${PH.OBJECT_TYPES[o.type].dimLabels[0]} m<input type="number" id="pl-sel-l" min="0.1" max="80" step="0.1" value="${o.dims.length.toFixed(1)}"></label>
+          ${PH.OBJECT_TYPES[o.type].porous ? `<label>Transparency %<input type="number" id="pl-sel-tr" min="0" max="90" step="5" value="${Math.round((o.porosity || 0) * 100)}"></label>` : ''}</span>`
       : nGroups > 1 ? `Settings apply to all ${nGroups} groups. Click panels on the map to edit one group.` : 'Settings apply to the whole design and to new panels.';
     const ds = $('#pl-desel'); if (ds) ds.onclick = () => { sel = null; syncInputs(); redraw(); };
+    if (o) {
+      const upd = (fn, rebuild) => { fn(); api.updateObject(o, rebuild); commit(); };
+      const hEl = $('#pl-sel-h'), lEl = $('#pl-sel-l'), tEl = $('#pl-sel-tr');
+      if (hEl) hEl.onchange = () => { const v = Number(hEl.value); if (v > 0) upd(() => { o.dims.height = v; }, true); };
+      if (lEl) lEl.onchange = () => { const v = Number(lEl.value); if (v > 0) upd(() => { o.dims.length = v; if (!PH.OBJECT_TYPES[o.type].dimLabels[1]) o.dims.width = v; }, true); };
+      if (tEl) tEl.onchange = () => { const v = Number(tEl.value); if (v >= 0) upd(() => { o.porosity = clamp(v, 0, 90) / 100; }, false); };
+    }
   }
   function refreshSummary() {
     if (!api) return;
@@ -495,7 +509,7 @@
     $('#pl-mounth').addEventListener('change', (e) => { const v = +e.target.value; if (v >= 0) applySettings({ mountHeight: clamp(v, 0, 5) }); });
     $('#pl-tools').addEventListener('click', (e) => { const b = e.target.closest('[data-tool]'); if (b) setTool(b.dataset.tool); });
     $('#pl-obtype').innerHTML = Object.entries(PH.OBJECT_TYPES).map(([k, t]) => `<option value="${k}">${t.label}</option>`).join('');
-    $('#pl-obtype').addEventListener('change', (e) => { obType = e.target.value; $('#pl-ob-h').value = PH.OBJECT_TYPES[obType].dims.height; });
+    $('#pl-obtype').addEventListener('change', (e) => { obType = e.target.value; $('#pl-ob-h').value = PH.OBJECT_TYPES[obType].dims.height; $('#pl-ob-tr-wrap').hidden = !PH.OBJECT_TYPES[obType].porous; });
     $('#pl-ob-h').value = PH.OBJECT_TYPES[obType].dims.height;
     $('#pl-layers').addEventListener('click', (e) => { const b = e.target.closest('[data-layer]'); if (b) setBase(b.dataset.layer); });
     $('#pl-locate').addEventListener('click', () => map && map.setView([S.site.lat, S.site.lon], Math.max(map.getZoom(), 19)));
