@@ -37,7 +37,8 @@
     visuals: 'high', shadowsOn: true, colourMode: 'real',
     sim: { lastT: null, T: {}, energyWh: 0, lastW: null, lastRes: null, playing: false },
     shade: { dirty: true, lastSun: null, trans: [], useTiles: false, profiles: {}, step: 10, scope: 'array' },
-    run: null, placing: null, zones: [], designName: '', view: 'twin', forecastRes: null, yieldRes: null, yearWx: null
+    run: null, placing: null, zones: [], designName: '', view: 'twin', forecastRes: null, yieldRes: null, yearWx: null,
+    finance: {}
   };
   const geoms = new Map();      // array id -> PH geometry
   let viewer = null, scene = null, siteM = null, siteMinv = null, tileset = null, handler = null, cloudStage = null;
@@ -87,7 +88,7 @@
   const saveSoon = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveScene, 600); };
   function sceneSnapshot() {
     return { v: 1, site: { name: state.site.name, lat: state.site.lat, lon: state.site.lon }, worldSrc: state.world.src,
-      arrays: state.arrays, objects: state.objects, zones: state.zones, designName: state.designName, live: state.live, compare: state.compare, params: state.params, thermalCa: state.thermalCa,
+      arrays: state.arrays, objects: state.objects, zones: state.zones, designName: state.designName, finance: state.finance, live: state.live, compare: state.compare, params: state.params, thermalCa: state.thermalCa,
       visuals: state.visuals, shadowsOn: state.shadowsOn, colourMode: state.colourMode };
   }
   function applySnapshot(s) {
@@ -98,6 +99,7 @@
     state.objects = (s.objects || []).filter(o => PH.OBJECT_TYPES[o.type]);
     state.zones = Array.isArray(s.zones) ? s.zones.filter(z => z && Array.isArray(z.poly)) : [];
     state.designName = s.designName || '';
+    state.finance = s.finance && typeof s.finance === 'object' ? s.finance : {};
     if (s.live && LIVE_KEYS.includes(s.live)) state.live = s.live;
     if (s.compare) state.compare = { ...state.compare, ...s.compare };
     if (s.params) state.params = { ...clone(PH.DEFAULT_PARAMS), ...s.params };
@@ -256,6 +258,23 @@
     viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(c, 20), {
       offset: new Cesium.HeadingPitchRange(topDown ? 0 : -0.35, topDown ? -Cesium.Math.PI_OVER_TWO + 0.02 : -0.55, range), duration
     });
+    return sleep(duration * 1000 + 200);
+  }
+  /** Frame the designed arrays and obstacles, looking at the panel faces from in front */
+  function designBounds() {
+    const pts = [];
+    state.arrays.forEach(a => { const g = geoms.get(a.id) || geomFor(a); g.panels.forEach(p => pts.push(p.c)); });
+    state.objects.forEach(o => pts.push([o.x, o.y, o.z + o.dims.height / 2]));
+    if (!pts.length) return null;
+    const lo = [0, 1, 2].map(k => Math.min(...pts.map(p => p[k]))), hi = [0, 1, 2].map(k => Math.max(...pts.map(p => p[k])));
+    const c = lo.map((v, k) => (v + hi[k]) / 2), r = Math.max(8, Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2 + 3);
+    return { c, r };
+  }
+  function flyToDesign(duration = 1.6) {
+    const b = designBounds(); if (!b || !viewer) return flyToSite(duration);
+    const az = state.arrays.length ? Math.atan2(state.arrays.reduce((t, a) => t + Math.sin(a.azimuth * D2R), 0), state.arrays.reduce((t, a) => t + Math.cos(a.azimuth * D2R), 0)) : Math.PI;
+    viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(enu2ecef(b.c[0], b.c[1], b.c[2]), b.r), {
+      offset: new Cesium.HeadingPitchRange(az + Math.PI, -0.85, Math.max(34, b.r * 3)), duration }); // from in front and above, so trees in front do not hide the panels
     return sleep(duration * 1000 + 200);
   }
   async function waitTiles(timeout = 10000) {
@@ -1600,7 +1619,7 @@ void main() {
     state.arrays.forEach(a => { a.worldSrc = a.worldSrc || 'none'; }); state.objects.forEach(o => { o.worldSrc = o.worldSrc || 'none'; });
     setSiteFrame(); geoms.clear(); state.shade.profiles = {}; state.shade.useTiles = false; $('#sh-tiles').checked = false;
     state.forecastRes = null; state.yieldRes = null; state.yearWx = null;
-    buildModelPane2(); rebuildAll(); if (state.view === 'twin') await flyToSite(1.2);
+    buildModelPane2(); rebuildAll(); if (state.view === 'twin') await (state.arrays.length ? flyToDesign(1.2) : flyToSite(1.2));
     const stale = [...state.arrays, ...state.objects].filter(i => i.worldSrc !== state.world.src); if (stale.length && state.view === 'twin') { await waitTiles(8000); await dropItems(stale); }
     $('#site-lat').value = state.site.lat.toFixed(6); $('#site-lon').value = state.site.lon.toFixed(6);
     renderSiteFacts(); renderSavedSites(); designChanged(true); saveScene();
@@ -1609,13 +1628,19 @@ void main() {
   }
   async function openNamedSite(id) {
     const x = listSites().find(e => e.id === id); if (!x) return;
-    try { await openSnapshot(x.snap, `“${x.name}”`); state.designName = x.name; state.designAuto = !!x.auto; renderSavedSites(); }
+    try {
+      await openSnapshot(x.snap, `“${x.name}”`); state.designName = x.name; state.designAuto = !!x.auto; renderSavedSites();
+      if (state.view === 'design' && window.ArienPlanner) ArienPlanner.focusDesign();
+    }
     catch (e) { toast('Could not open that site: ' + e.message, 'err'); }
   }
   function deleteNamedSite(id) { try { PL.removeSite(localStorage, id); } catch (e) { /* ignore */ } renderSavedSites(); }
 
   // ------------------------------------------------------------------ forecast and yield estimates
   const totalKwp = () => state.arrays.reduce((t, a) => t + PN.arrayKwp(a), 0);
+  /** DC physics → delivered AC energy: system losses (and first-year ageing for annual figures), from the dashboard assumptions */
+  const finAssume = () => ({ ...(window.ArienFinance ? ArienFinance.DEFAULTS : { systemLosses: 14, firstYearDegradation: 1 }), ...state.finance });
+  const acFactor = (year = true) => { const a = finAssume(); return (1 - a.systemLosses / 100) * (year ? 1 - a.firstYearDegradation / 100 : 1); };
   /** Next 7 days with the live model: daily kWh from the forecast run */
   async function forecastWeek() {
     if (!state.arrays.length) { toast('Place panels first.', 'warn'); return null; }
@@ -1632,7 +1657,9 @@ void main() {
     });
     const list = [...days].map(([t, kwh]) => ({ t, kwh })).filter(d => d.t < today + 7 * 86400000);
     const s = state.wx.series;
-    const res = { kind: 'forecast', model: k, days: list, total: list.reduce((a, b) => a + b.kwh, 0), kwp: totalKwp(), source: s.source, cached: !!s.fromCache, at: Date.now() };
+    const keep = run.times.map((t, i) => i).filter(i => run.times[i] >= today && run.times[i] < today + 7 * 86400000);
+    const res = { kind: 'forecast', model: k, days: list, total: list.reduce((a, b) => a + b.kwh, 0), kwp: totalKwp(), source: s.source, cached: !!s.fromCache, at: Date.now(),
+      series: { times: keep.map(i => run.times[i]), kw: keep.map(i => run.kw[k][i]), cloud: keep.map(i => run.cloud[i]) } };
     state.forecastRes = res; renderResults();
     return res;
   }
@@ -1679,7 +1706,7 @@ void main() {
     const cache = new Map(), nP = gs.reduce((t, g) => t + g.panels.length, 0);
     const binAz = opt.binAz || (nP > 150 ? 3 : 1.5), binAlt = opt.binAlt || (nP > 150 ? 1.5 : 0.75); // degrees: shading is reused within a bin
     const off = s.utcOffset * 1000; let lastYield = performance.now(), prevDay = false;
-    const unshadedTrans = [];
+    const unshadedTrans = [], hourly = new Float64Array(s.time.length); // live model, kWh in each hour (DC)
     for (let i = 0; i < s.time.length; i++) {
       const t = s.time[i] - 1800000; // radiation is the mean of the hour ending at time[i]
       const w = WX.sample(s, t, state.site.lat, state.site.lon);
@@ -1693,6 +1720,7 @@ void main() {
         const r1 = computePower(k, w, sunVec, trans, TsS[k], prevDay ? 3600 : null, arrs, gs);
         const r0 = computePower(k, w, sunVec, unshadedTrans, TsU[k], prevDay ? 3600 : null, arrs, gs);
         month[k][m] += r1.kw; total[k] += r1.kw; unshaded[k] += r0.kw;
+        if (k === keys[0]) hourly[i] = r1.kw;
       }
       prevDay = true;
       if (performance.now() - lastYield > 100) { if (onProgress) onProgress(i / s.time.length); if (!quiet) setResultsBusy(`Estimating yield: ${Math.round(i / s.time.length * 100)}%`); await breathe(); lastYield = performance.now(); }
@@ -1702,7 +1730,8 @@ void main() {
     const scale = days > 300 ? 365 / days : 1; // normalise to a full year
     return { kind: 'yield', model: k, months: month[k].map(v => v * scale), total: total[k] * scale, kwp, specific: kwp ? total[k] * scale / kwp : 0,
       shadingLoss: unshaded[k] > 0 ? 1 - total[k] / unshaded[k] : 0, perModel: Object.fromEntries(keys.map(x => [x, total[x] * scale])),
-      start: s.start, end: s.end, source: s.source, cached: !!s.fromCache, tiles: !!hz, at: Date.now() };
+      start: s.start, end: s.end, source: s.source, cached: !!s.fromCache, tiles: !!hz, at: Date.now(),
+      hourly: { times: s.time.slice(), kwh: Array.from(hourly), scale, utcOffset: s.utcOffset * 1000 } };
   }
   /** Annual beam-shading loss under clear skies (Kasten, N = 0) on the 21st of each month: quick, for the planner */
   function quickShadingLoss() {
@@ -1736,33 +1765,22 @@ void main() {
     if (window.ArienPlanner && state.view === 'design') ArienPlanner.redraw();
     renderSavedSites();
   }
-  // result cards (shared by the dashboard and the planner)
-  function barsSvg(vals, labels, color) {
-    const W = 300, H = 92, pad = 16, n = vals.length, max = Math.max(...vals, 0.001), bw = (W - 4) / n;
-    let bars = '';
-    vals.forEach((v, i) => {
-      const h = (H - pad - 12) * v / max, x = 2 + i * bw;
-      bars += `<rect x="${(x + bw * 0.14).toFixed(1)}" y="${(H - pad - h).toFixed(1)}" width="${(bw * 0.72).toFixed(1)}" height="${Math.max(0.5, h).toFixed(1)}" rx="2" fill="${color}"><title>${labels[i]}: ${v.toFixed(1)} kWh</title></rect>`
-        + `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 3}" text-anchor="middle">${labels[i]}</text>`;
-      if (n <= 8) bars += `<text x="${(x + bw / 2).toFixed(1)}" y="${(H - pad - h - 3).toFixed(1)}" text-anchor="middle" class="v">${v >= 100 ? v.toFixed(0) : v.toFixed(1)}</text>`;
-    });
-    return `<svg class="bars" viewBox="0 0 ${W} ${H}" role="img" aria-label="kWh per ${n === 12 ? 'month' : 'day'}">${bars}</svg>`;
-  }
+  // result cards (shared by the Analysis panel and the planner)
   function resultsHtml() {
     let html = '';
     const f = state.forecastRes, y = state.yieldRes;
     if (f) {
       html += `<div class="result-card${f.stale ? ' stale' : ''}"><div class="rc-head"><span class="eyebrow">Forecast · next 7 days</span>${f.stale ? '<span class="badge warn">design changed</span>' : ''}</div>
-        <div class="rc-big"><b>${f.total.toFixed(1)}</b> kWh <small>${(f.total / Math.max(1, f.days.length)).toFixed(1)} kWh a day · ${f.kwp.toFixed(2)} kWp</small></div>
-        ${barsSvg(f.days.map(d => d.kwh), f.days.map(d => DAYS[new Date(d.t + utcOffset()).getUTCDay()]), cssVar('--sun') || '#f3b23c')}
+        <div class="rc-big"><b>${(f.total * acFactor(false)).toFixed(1)}</b> kWh <small>${(f.total * acFactor(false) / Math.max(1, f.days.length)).toFixed(1)} kWh a day · ${f.kwp.toFixed(2)} kWp · after ${finAssume().systemLosses}% system losses</small></div>
+        <div class="rc-chart"><canvas data-chart="forecast" aria-label="kWh per day, next 7 days"></canvas></div>
         <p class="hint">${escapeHtml(modelLabel(f.model))} · ${escapeHtml(f.source)}${f.cached ? ' (site cache)' : ''}.</p></div>`;
     }
     if (y) {
-      const per = Object.entries(y.perModel).filter(([k]) => k !== y.model).map(([k, v]) => `${modelShort(k)} ${Math.round(v).toLocaleString()}`).join(' · ');
+      const per = Object.entries(y.perModel).filter(([k]) => k !== y.model).map(([k, v]) => `${modelShort(k)} ${Math.round(v * acFactor()).toLocaleString()}`).join(' · ');
       html += `<div class="result-card${y.stale ? ' stale' : ''}"><div class="rc-head"><span class="eyebrow">Estimated yield · a year</span>${y.stale ? '<span class="badge warn">design changed</span>' : ''}</div>
-        <div class="rc-big"><b>${Math.round(y.total).toLocaleString()}</b> kWh <small>${Math.round(y.specific).toLocaleString()} kWh/kWp · shading loss ${(y.shadingLoss * 100).toFixed(1)}%</small></div>
-        ${barsSvg(y.months, MONTHS.map(m => m[0]), cssVar('--sky') || '#6cc3e8')}
-        <p class="hint">${escapeHtml(modelLabel(y.model))} on ${escapeHtml(y.source)}, ${fmtDay(y.start)} ${new Date(y.start).getUTCFullYear()} – ${fmtDay(y.end)} ${new Date(y.end).getUTCFullYear()}${y.cached ? ' (site cache)' : ''}, hourly.${per ? ' Other models: ' + escapeHtml(per) + ' kWh.' : ''}${y.tiles ? ' Includes the 3D-tile skyline.' : ' Shading from placed obstacles and panel rows; trace the skyline in the 3D twin to add buildings from the tiles.'} No inverter, cable or soiling losses.</p></div>`;
+        <div class="rc-big"><b>${Math.round(y.total * acFactor()).toLocaleString()}</b> kWh <small>${Math.round(y.specific * acFactor()).toLocaleString()} kWh/kWp · shading loss ${(y.shadingLoss * 100).toFixed(1)}% · first year, after ${finAssume().systemLosses}% system losses</small></div>
+        <div class="rc-chart"><canvas data-chart="yield" aria-label="kWh per month"></canvas></div>
+        <p class="hint">${escapeHtml(modelLabel(y.model))} on ${escapeHtml(y.source)}, ${fmtDay(y.start)} ${new Date(y.start).getUTCFullYear()} – ${fmtDay(y.end)} ${new Date(y.end).getUTCFullYear()}${y.cached ? ' (site cache)' : ''}, hourly.${per ? ' Other models: ' + escapeHtml(per) + ' kWh.' : ''}${y.tiles ? ' Includes the 3D-tile skyline.' : ' Shading from placed obstacles and panel rows; trace the skyline in the 3D twin to add buildings from the tiles.'} Losses and prices are set in Dashboard → Assumptions.</p></div>`;
     }
     return html;
   }
@@ -1770,7 +1788,19 @@ void main() {
   function setResultsBusy(msg) { busyMsg = msg; renderResults(); }
   function renderResults() {
     const html = (busyMsg ? `<div class="result-card busy"><span class="spinner"></span>${escapeHtml(busyMsg)}</div>` : '') + resultsHtml();
-    $$('.results-slot').forEach(el => { el.innerHTML = html; el.hidden = !html; });
+    $$('.results-slot').forEach(el => {
+      if (el.dataset.html === html) return; // unchanged: keep the charts
+      el.dataset.html = html; el.innerHTML = html; el.hidden = !html;
+      drawResultCharts(el);
+    });
+    if (window.ArienDashboard) ArienDashboard.refresh();
+  }
+  function drawResultCharts(el) {
+    if (!window.ArienCharts) return;
+    const f = state.forecastRes, y = state.yieldRes, C = ArienCharts;
+    $$('canvas[data-chart="forecast"]', el).forEach(cv => f && C.bars(cv, { labels: f.days.map(d => DAYS[new Date(d.t + utcOffset()).getUTCDay()]), values: f.days.map(d => d.kwh * acFactor(false)), color: cssVar('--sun'), unit: 'kWh', decimals: 1, yTitle: 'kWh', valueLabels: true }));
+    $$('canvas[data-chart="yield"]', el).forEach(cv => y && C.bars(cv, { labels: MONTHS.map(m => m[0]), values: y.months.map(v => v * acFactor()), color: cssVar('--sky'), unit: 'kWh', decimals: 0, yTitle: 'kWh',
+      tooltipTitle: (it) => it.length ? MONTHS[it[0].dataIndex] : '' }));
   }
   async function runForecastUi() { setResultsBusy('Forecasting the next 7 days…'); try { const r = await forecastWeek(); return r; } finally { setResultsBusy(''); } }
   async function runYieldUi() { const r = await estimateYield(); setResultsBusy(''); return r; }
@@ -1779,21 +1809,69 @@ void main() {
   function setView(v) {
     if (v === state.view) return;
     state.view = v;
+    const flat = v === 'design' || v === 'dashboard';
     document.body.classList.toggle('view-design', v === 'design');
+    document.body.classList.toggle('view-dashboard', v === 'dashboard');
+    document.body.classList.toggle('view-flat', flat);
     $('#planner').hidden = v !== 'design';
+    $('#dashboard').hidden = v !== 'dashboard';
     $$('#rail button[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === v)));
-    if (v === 'design') {
+    if (flat) {
       closeDrawer(); toggleDash(false); stopPlacing();
       if (viewer) viewer.useDefaultRenderLoop = false; // the globe is hidden: save the GPU
-      if (window.ArienPlanner) ArienPlanner.show();
-      if (state.quickLoss == null) updateQuickLoss(0);
-      if (location.hash !== '#design') history.replaceState(null, '', '#design');
+      if (v === 'design') { if (window.ArienPlanner) ArienPlanner.show(); if (state.quickLoss == null) updateQuickLoss(0); }
+      if (v === 'dashboard' && window.ArienDashboard) ArienDashboard.show();
+      if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
     } else {
       if (viewer) { viewer.useDefaultRenderLoop = true; viewer.resize(); }
       if (state.site.groundPending && viewer) state.siteSettle = settleSite();
-      if (location.hash === '#design') history.replaceState(null, '', location.pathname + location.search);
+      if (location.hash === '#design' || location.hash === '#dashboard') history.replaceState(null, '', location.pathname + location.search);
     }
   }
+  /** Make sure the dashboard has a forecast and a year of yield for the current design */
+  async function ensureResults(onStep) {
+    if (!state.arrays.length) return false;
+    if (!state.forecastRes || state.forecastRes.stale) { if (onStep) onStep('forecast'); await runForecastUi(); }
+    if (!state.yieldRes || state.yieldRes.stale) { if (onStep) onStep('yield'); await runYieldUi(); }
+    return !!(state.forecastRes && state.yieldRes);
+  }
+  /** Everything the dashboard and report need, from the current design and results */
+  function designSummary() {
+    const groups = new Map();
+    state.arrays.forEach(a => {
+      const key = a.zone || a.id; const z = a.zone ? state.zones.find(q => q.id === a.zone) : null;
+      if (!groups.has(key)) groups.set(key, { label: z ? z.name : a.name, arrays: [] });
+      groups.get(key).arrays.push(a);
+    });
+    const list = [...groups.values()].map((g, i) => {
+      const a0 = g.arrays[0], n = g.arrays.reduce((t, a) => t + a.rows * a.cols, 0), pm = PN.byId(a0.panelModel);
+      return { id: 'A' + (i + 1), label: g.label, panels: n, rows: a0.zone ? new Set(g.arrays.map(a => a.zoneRow ?? a.planeRow ?? a.id)).size : a0.rows,
+        tilt: a0.tilt, azimuth: a0.azimuth, model: pm ? PN.label(pm) : 'Custom panel', modelId: a0.panelModel, kwp: g.arrays.reduce((t, a) => t + PN.arrayKwp(a), 0),
+        landscape: !!a0.landscape, mount: a0.planeRow != null ? 'Flush on roof' : (a0.zone ? 'Racked rows' : `${a0.rows} × ${a0.cols} array`),
+        geoms: g.arrays.map(a => PH.buildArrayGeometry({ ...a, cellsX: 1, cellsY: 1 })) };
+    });
+    return { groups: list, panels: list.reduce((t, g) => t + g.panels, 0), kwp: totalKwp(),
+      models: [...new Set(state.arrays.map(a => a.panelModel))].map(id => PN.byId(id)).filter(Boolean) };
+  }
+  function dashboardApi() {
+    return {
+      state, PN, PL, PH, WX, toast, escapeHtml, fmtDay, fmtTime, utcOffset, modelLabel, modelShort, MONTHS, DAYS, cssVar,
+      ensureResults, designSummary, listSites, deleteSite: deleteNamedSite, setView, totalKwp, saveSoon,
+      openSite: async (id, view) => {
+        const v = view || 'design'; setView(v); await openNamedSite(id);
+        if (v === 'twin') flyToDesign(1.2);
+      },
+      newDesign: () => setView('design'),
+      siteLabel: () => state.designName || suggestedName(),
+      weatherSources: () => {
+        const f = state.forecastRes, y = state.yieldRes;
+        return [f ? `forecast: Open-Meteo.com, ${f.source}${f.cached ? ' (site cache)' : ''}` : null,
+          y ? `annual yield: ERA5 reanalysis (Copernicus Climate Change Service) via Open-Meteo.com, ${isoDate(y.start)} to ${isoDate(y.end)}` : null].filter(Boolean);
+      }
+    };
+  }
+
+
   /** After the site moved in the planner: fly there and read the ground height */
   async function settleSite() {
     await flyToSite(1.4);
@@ -1804,7 +1882,7 @@ void main() {
   async function simulateDesign() {
     setView('twin');
     const fresh = [...state.arrays, ...state.objects].filter(i => i.fromPlanner);
-    if (state.siteSettle) await state.siteSettle; else await flyToSite(1.4);
+    if (state.siteSettle) await state.siteSettle; else await flyToDesign(1.2);
     if (state.world.src !== 'none' && fresh.length) {
       // panels and chimneys sit on whatever is under them (roofs); trees, hedges, walls and buildings stand on the ground,
       // since photorealistic tiles include the real tree canopies a drop would land on
@@ -1813,8 +1891,11 @@ void main() {
       await waitTiles(9000); await dropItems(onSurface);
     } else if (fresh.length) { rebuildAll(); } // map only: keep the planner heights (flush rows climb the roof plane)
     fresh.forEach(i => { delete i.fromPlanner; });
+    geoms.clear(); await flyToDesign(1.4); // the drop may have lifted the panels onto roofs
     if (!state.wx.series) await loadWeather(true); else { simulateNow(true); await runPeriod(true); }
     if (state.run) toggleDash(true);
+    // have the dashboard ready: a year of yield in the background
+    if (!state.yieldRes || state.yieldRes.stale) estimateYield().then((r) => { setResultsBusy(''); if (r) toast('Dashboard ready: savings, payback, forecast and the PDF report are under Dashboard in the left rail.', 'ok', 7000); });
   }
   function plannerApi() {
     return {
@@ -1826,6 +1907,7 @@ void main() {
         Object.assign(a, { tilt: spec.tilt, azimuth: spec.azimuth, rows: spec.rows || 1, cols: spec.cols || 1, rowPitch: spec.rowPitch || a.rowPitch,
           colGap: spec.colGap ?? a.colGap, mountHeight: spec.mountHeight ?? a.mountHeight, zone: spec.zone || null, fromPlanner: true, worldSrc: 'none' });
         if (spec.planeRow != null) a.planeRow = spec.planeRow;
+        if (spec.zoneRow != null) a.zoneRow = spec.zoneRow;
         if (spec.name) a.name = spec.name;
         state.arrays.push(a); if (scene) buildArrayPrimitive(a);
         return a;
@@ -1843,7 +1925,7 @@ void main() {
       goToSite, searchPlaces, suggestedName, saveSite: saveNamedSite, listSites, openSite: openNamedSite, deleteSite: deleteNamedSite,
       forecast: runForecastUi, estimateYield: runYieldUi, simulate: simulateDesign, openTwin: () => setView('twin'), totalKwp,
       specificYield: specificYieldFor,
-      quickLoss: () => state.quickLoss, renderSavedSites, renderResults
+      quickLoss: () => state.quickLoss, renderSavedSites, renderResults, acFactor
     };
   }
 
@@ -1878,7 +1960,7 @@ void main() {
   function wire() {
     $('#rail').addEventListener('click', (e) => {
       const v = e.target.closest('button[data-view]');
-      if (v) { setView(state.view === 'design' ? 'twin' : 'design'); return; }
+      if (v) { setView(state.view === v.dataset.view ? 'twin' : v.dataset.view); return; }
       const b = e.target.closest('button[data-panel]'); if (!b) return;
       if (state.view === 'design') setView('twin');
       if (state.openPane === b.dataset.panel && !$('#drawer').hidden) closeDrawer(); else openDrawer(b.dataset.panel);
@@ -2258,10 +2340,11 @@ void main() {
     $('#site-lat').value = state.site.lat.toFixed(6); $('#site-lon').value = state.site.lon.toFixed(6);
     wire(); initSetup(); initAdmin(); buildModelPane2(); renderSiteFacts(); updateSiteSearchAvailability();
     if (window.ArienPlanner) ArienPlanner.init(plannerApi());
+    if (window.ArienDashboard) ArienDashboard.init(dashboardApi());
     renderSavedSites(); renderResults();
-    if (location.hash === '#design') { const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); setView('design'); } }, 300); }
+    if (location.hash === '#design' || location.hash === '#dashboard') { const v = location.hash.slice(1); const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); setView(v); } }, 300); }
     if (location.hash === '#admin') { const go = () => openDrawer('admin'); const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); go(); } }, 400); }
-    window.__arien = { state, viewer: () => viewer, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef, setView, forecastWeek, estimateYield,
+    window.__arien = { state, viewer: () => viewer, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef, setView, forecastWeek, estimateYield, designSummary, flyToDesign, designBounds,
       quickShadingLoss, saveNamedSite, listSites, openNamedSite, searchPlaces, suggestedName,
       dropAll: () => dropItems([...state.arrays]),
       yieldDebug: async (o) => runYield(await yearWeather(), null, { quiet: true, ...o, arrays: o.full ? state.arrays.map(a => ({ ...a })) : coarseArrays() }),

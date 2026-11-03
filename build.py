@@ -13,6 +13,10 @@ parts = {
     "/*@@PANELS@@*/": (src / "panels.js").read_text(),
     "/*@@PLACES@@*/": (src / "places.js").read_text(),
     "/*@@PLANNER@@*/": (src / "planner.js").read_text(),
+    "/*@@CHARTS@@*/": (src / "charts.js").read_text(),
+    "/*@@FINANCE@@*/": (src / "finance.js").read_text(),
+    "/*@@DASHBOARD@@*/": (src / "dashboard.js").read_text(),
+    "/*@@REPORT@@*/": (src / "report.js").read_text(),
     "/*@@APP@@*/": (src / "app.js").read_text(),
 }
 for marker, body in parts.items():

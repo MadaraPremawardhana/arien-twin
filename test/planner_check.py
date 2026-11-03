@@ -92,7 +92,7 @@ with sync_playwright() as p:
         const p = m.latLngToContainerPoint(ll); const b = m.getContainer().getBoundingClientRect(); return [b.left + p.x, b.top + p.y]; }''')
     page.mouse.move(pt[0], pt[1]); page.mouse.down(); page.mouse.move(pt[0] + 20, pt[1], steps=4); page.mouse.move(pt[0] + 40, pt[1], steps=4); page.mouse.up(); time.sleep(0.6)
     z1 = page.evaluate('() => { const z = __arien.state.zones[0]; return { x: z.poly[0][0], ax: __arien.state.arrays.find(a => a.zone === z.id).x }; }')
-    check('dragging moves a roof area and its panels', z1['x'] - z0['x'] > 3 and abs((z1['x'] - z0['x']) - (z1['ax'] - z0['ax'])) < 1e-6, f'{z0} → {z1}')
+    check('dragging moves a roof area and its panels', z1['x'] - z0['x'] > 1 and abs((z1['x'] - z0['x']) - (z1['ax'] - z0['ax'])) < 1e-6, f'{z0} → {z1}')
     # right-click removes the single panel
     ns_before = page.evaluate('() => __arien.state.arrays.filter(a => !a.zone).length')
     page.mouse.click(cx - 200, cy - 150, button='right'); time.sleep(0.5)

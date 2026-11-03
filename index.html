@@ -95,7 +95,8 @@ code { font-size: 12px; color: var(--sky); }
 .brand img { width: 52px; height: auto; display: block; }
 .rail-sep { height: 1px; margin: 4px 8px 6px; background: var(--line); flex: none; }
 #rail button[data-view="design"] { color: var(--fg); }
-#rail button[data-view="design"][aria-pressed="true"] { color: var(--sun); }
+#rail button[data-view="dashboard"] span { font-size: 9px; letter-spacing: 0.02em; }
+#rail button[data-view][aria-pressed="true"] { color: var(--sun); background: rgba(243, 178, 60, 0.1); box-shadow: inset 2px 0 0 var(--sun); }
 #rail button {
   display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 2px 6px; border: 0; border-radius: var(--r);
   background: transparent; color: var(--muted); cursor: pointer; font: 600 10.5px/1 var(--f-display); letter-spacing: 0.06em; text-transform: uppercase;
@@ -321,9 +322,7 @@ table.results td.best { color: var(--good); }
 .rc-big { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; }
 .rc-big b { font: 600 30px/1 var(--f-display); color: var(--fg); font-variant-numeric: tabular-nums; }
 .rc-big small { flex-basis: 100%; font-size: 12px; }
-svg.bars { width: 100%; height: auto; display: block; }
-svg.bars text { font: 9.5px var(--f-mono); fill: var(--muted); }
-svg.bars text.v { fill: var(--fg); }
+.rc-chart { position: relative; height: 150px; margin: 2px -2px 0; }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-strong); border-top-color: var(--sun); animation: spin 0.8s linear infinite; flex: none; display: inline-block; vertical-align: -2px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .saved-list li { display: flex; gap: 4px; align-items: stretch; }
@@ -333,9 +332,9 @@ svg.bars text.v { fill: var(--fg); }
 button.link { background: none; border: 0; padding: 0; color: var(--sky); cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 2px; }
 
 /* ---------- Design planner (2D) ---------- */
-body.view-design #hud, body.view-design #timebar, body.view-design #drawer, body.view-design #dash, body.view-design .cesium-viewer-bottom { display: none !important; }
-body.view-design #globe { visibility: hidden; }
-body.view-design #toasts { bottom: 24px; }
+body.view-flat #hud, body.view-flat #timebar, body.view-flat #drawer, body.view-flat #dash, body.view-flat .cesium-viewer-bottom, body.view-flat #modebar { display: none !important; }
+body.view-flat #globe { visibility: hidden; }
+body.view-flat #toasts { bottom: 24px; }
 #planner {
   position: absolute; z-index: 16; top: max(10px, env(safe-area-inset-top, 0px)); bottom: 10px; left: calc(var(--rail) + 10px); right: max(10px, env(safe-area-inset-right, 0px));
   display: grid; grid-template-columns: 290px minmax(0, 1fr) 330px; grid-template-areas: "left map right"; gap: 10px;
@@ -396,8 +395,90 @@ body.view-design #toasts { bottom: 24px; }
   #planner { grid-template-columns: 280px minmax(0, 1fr); grid-template-rows: minmax(0, 1.4fr) minmax(0, 1fr); grid-template-areas: "left map" "left right"; }
 }
 
+/* ---------- Dashboard ---------- */
+#dashboard { position: absolute; z-index: 16; top: max(10px, env(safe-area-inset-top, 0px)); bottom: 10px; left: calc(var(--rail) + 10px); right: max(10px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; background: var(--glass); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); overflow: hidden; }
+.db-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px 22px 14px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, rgba(26, 39, 48, 0.6), transparent); }
+.db-title h2 { margin: 2px 0 2px; font: 600 26px/1.1 var(--f-display); letter-spacing: 0.03em; }
+.db-title .hint { margin: 0; }
+.db-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.db-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.db-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; padding: 16px 22px 8px; align-items: start; }
+.db-card { grid-column: span 12; background: rgba(6, 12, 16, 0.42); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.db-card.span-8 { grid-column: span 8; } .db-card.span-7 { grid-column: span 7; } .db-card.span-5 { grid-column: span 5; } .db-card.span-4 { grid-column: span 4; }
+.db-card-head h3 { margin: 0; font: 600 14px/1.2 var(--f-display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.db-empty { grid-column: span 12; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 20px; text-align: center; border: 1px dashed var(--line-strong); border-radius: 12px; }
+.db-empty h3 { margin: 0; font: 600 20px var(--f-display); letter-spacing: 0.04em; }
+.db-stale { grid-column: span 12; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-radius: 10px; background: rgba(227, 160, 74, 0.12); border: 1px solid rgba(227, 160, 74, 0.4); color: var(--warn); font-size: 13px; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.kpi { padding: 12px 14px; border-radius: 10px; background: rgba(150, 186, 206, 0.05); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.kpi.wide { grid-row: span 1; }
+.kpi.muted { border-style: dashed; }
+.kpi-label { font: 600 11px/1.2 var(--f-display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.kpi-value { font: 600 32px/1 var(--f-display); color: var(--fg); font-variant-numeric: tabular-nums; display: flex; align-items: baseline; gap: 6px; }
+.kpi-value small { font: 500 13px var(--f-body); color: var(--muted); }
+.kpi:first-child .kpi-value, .kpi:nth-child(3) .kpi-value, .kpi:nth-child(4) .kpi-value { color: var(--sun); }
+.kpi-sub { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.kpi-sub b { color: var(--fg); font-weight: 600; font-family: var(--f-mono); }
+.db-chart { position: relative; height: 220px; }
+.db-chart.tall { height: 260px; }
+.fc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); }
+.fc-big { font: 600 30px/1 var(--f-display); color: var(--fg); margin-right: 4px; }
+.day-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.day-chip { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 4px; border-radius: 8px; border: 1px solid var(--line); background: rgba(150, 186, 206, 0.04); }
+.day-chip span { font: 600 10.5px var(--f-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.day-chip b { font: 600 17px var(--f-display); } .day-chip small { font-size: 10.5px; color: var(--dim); }
+.day-chip.on { border-color: rgba(243, 178, 60, 0.6); background: rgba(243, 178, 60, 0.08); }
+.reco-day { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+.reco-day-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+.reco-day-head b { font: 600 13px var(--f-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg); }
+.reco-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.reco-list li { display: grid; grid-template-columns: minmax(0, 1.5fr) 90px minmax(50px, 1fr) 80px; align-items: center; gap: 8px; font-size: 12.5px; }
+.reco-list .when { font-family: var(--f-mono); color: var(--fg); }
+.reco-list .cov { height: 6px; border-radius: 3px; background: rgba(150, 186, 206, 0.12); overflow: hidden; }
+.reco-list .cov span { display: block; height: 100%; background: var(--good); border-radius: 3px; }
+.reco-list li.ok .cov span { background: var(--sun); } .reco-list li.low .cov span { background: var(--dim); }
+.reco-list li.low .when, .reco-list li.low .covn { color: var(--dim); }
+.reco-list .covn { font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); text-align: right; }
+.fin-top { display: flex; flex-direction: column; gap: 10px; }
+.fin-top .seg { align-self: flex-start; }
+.fin-sum { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.fin-sum div { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 8px; background: rgba(150, 186, 206, 0.05); border: 1px solid var(--line); }
+.fin-sum span { font: 600 10.5px var(--f-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.fin-sum b { font: 600 19px var(--f-display); font-variant-numeric: tabular-nums; }
+.fin-sum .pos b { color: var(--good); } .fin-sum .neg b { color: var(--bad); }
+.db-table summary { font: 600 12.5px var(--f-display); letter-spacing: 0.06em; text-transform: uppercase; }
+.as-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 2px 28px; }
+.as-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; text-transform: none; letter-spacing: 0; font: 400 12.5px var(--f-body); color: var(--fg); padding: 2px 0; border-bottom: 1px solid rgba(150, 186, 206, 0.07); cursor: help; }
+.as-in { display: flex; align-items: center; gap: 6px; flex: none; }
+.as-in input { width: 96px; padding: 4px 6px; font-size: 12.5px; text-align: right; }
+.as-in input::placeholder { color: var(--sky); opacity: 0.85; }
+.as-in small { width: 70px; color: var(--muted); font-size: 11px; }
+.site-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.site-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line); background: rgba(150, 186, 206, 0.04); flex-wrap: wrap; }
+.sl-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sl-main small { color: var(--muted); font-size: 12px; }
+.sl-act { display: flex; gap: 6px; align-items: center; }
+.sl-act .icon-btn.armed { color: var(--bad); background: rgba(229, 103, 92, 0.12); }
+.report-box { display: flex; justify-content: space-between; align-items: center; gap: 14px; flex-wrap: wrap; }
+.report-box > div { flex: 1 1 220px; }
+.db-foot { display: flex; flex-wrap: wrap; gap: 4px 18px; padding: 10px 22px 18px; color: var(--dim); font-size: 11.5px; border-top: 1px solid var(--line); margin-top: 6px; }
+@media (max-width: 1180px) {
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .db-card.span-8, .db-card.span-7, .db-card.span-5, .db-card.span-4 { grid-column: span 12; }
+  .fin-sum { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
 /* ---------- Narrow screens ---------- */
 @media (max-width: 760px) {
+  #dashboard { left: 8px; right: 8px; top: 8px; bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 8px); }
+  .db-head { padding: 12px 14px; } .db-grid { padding: 12px 12px 6px; gap: 10px; }
+  .kpis { grid-template-columns: minmax(0, 1fr); }
+  .fin-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .day-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .reco-list li { grid-template-columns: minmax(0, 1fr) 86px; }
+  .reco-list .cov { grid-column: 1; } .reco-list .covn { grid-column: 2; }
+  .db-foot { padding: 10px 14px 14px; }
   :root { --rail: 0px; --timebar: 112px; }
   #rail { top: auto; bottom: 0; left: 0; right: 0; width: auto; height: calc(58px + env(safe-area-inset-bottom, 0px)); flex-direction: row; padding: 4px max(6px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(6px, env(safe-area-inset-left, 0px)); overflow-x: auto; border-right: 0; border-top: 1px solid var(--line); }
   #rail .brand, .rail-gap, .rail-sep { display: none; }
@@ -459,6 +540,7 @@ body.view-design #toasts { bottom: 24px; }
     <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L5 13h6l-1 9 8-11h-6z"/></symbol>
     <symbol id="i-bars" viewBox="0 0 24 24"><path d="M4 20h16M7 17v-5M12 17V7M17 17v-8"/></symbol>
     <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
+    <symbol id="i-dash" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="10" rx="1.5"/><rect x="13" y="3" width="8" height="6" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/></symbol>
     <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3v13M7 11l5 5 5-5M5 21h14"/></symbol>
   </defs>
 </svg>
@@ -477,6 +559,7 @@ body.view-design #toasts { bottom: 24px; }
     <button data-panel="models" title="Irradiance models (5)"><svg><use href="#i-models"/></svg><span>Models</span></button>
     <button data-panel="shading" title="Shading (6)"><svg><use href="#i-shade"/></svg><span>Shading</span></button>
     <button data-panel="meta" title="Meta-learning (7)"><svg><use href="#i-meta"/></svg><span>Meta</span></button>
+    <button data-view="dashboard" title="Dashboard: savings, forecast, report" aria-pressed="false"><svg><use href="#i-dash"/></svg><span>Dashboard</span></button>
     <span class="rail-gap"></span>
     <button data-panel="world" title="3D world and keys (8)"><svg><use href="#i-world"/></svg><span>World</span></button>
   </nav>
@@ -783,7 +866,7 @@ body.view-design #toasts { bottom: 24px; }
     <div class="hud-wx" id="hud-wx">—</div>
     <div class="hud-btns">
       <button class="chip" id="btn-visuals" aria-pressed="true" title="Weather visuals (V)"><svg><use href="#i-eye"/></svg>Visuals</button>
-      <button class="chip" id="btn-dash" aria-pressed="false" title="Dashboard (D)"><svg><use href="#i-chart"/></svg>Dashboard</button>
+      <button class="chip" id="btn-dash" aria-pressed="false" title="Analysis: model comparison over the period (D)"><svg><use href="#i-chart"/></svg>Analysis</button>
     </div>
     <div class="hud-btns">
       <button class="chip" id="btn-forecast" title="Energy over the next 7 days"><svg><use href="#i-bolt"/></svg>Forecast</button>
@@ -791,8 +874,8 @@ body.view-design #toasts { bottom: 24px; }
     </div>
   </div>
 
-  <aside id="dash" hidden aria-label="Dashboard">
-    <header class="drawer-head"><h2>Dashboard</h2><button class="icon-btn" id="dash-close" title="Close (D)"><svg><use href="#i-close"/></svg></button></header>
+  <aside id="dash" hidden aria-label="Analysis">
+    <header class="drawer-head"><h2>Analysis</h2><button class="icon-btn" id="dash-close" title="Close (D)"><svg><use href="#i-close"/></svg></button></header>
     <div class="drawer-body">
       <div class="results-slot" hidden></div>
       <div class="reco" id="reco">Run the period to get a recommendation.</div>
@@ -893,6 +976,18 @@ body.view-design #toasts { bottom: 24px; }
       </div>
       <form class="chat-in" id="pl-chat-form"><input id="pl-chat-q" placeholder="e.g. 10 panels in London, south-facing" aria-label="Describe the design"><button class="icon-btn send" title="Send"><svg><use href="#i-send"/></svg></button></form>
     </aside>
+  </section>
+
+  <section id="dashboard" hidden aria-label="Dashboard">
+    <header class="db-head">
+      <div class="db-title"><span class="eyebrow">Dashboard</span><h2 id="db-site">Your solar site</h2><p class="hint" id="db-sub"></p></div>
+      <div class="db-actions">
+        <button class="btn" data-goto="design"><svg><use href="#i-design"/></svg>Edit design</button>
+        <button class="btn" data-goto="twin"><svg><use href="#i-panels"/></svg>View in 3D</button>
+      </div>
+    </header>
+    <div class="db-scroll"><div class="db-grid" id="db-body"></div>
+      <footer class="db-foot" id="db-foot"></footer></div>
   </section>
 
   <div id="modebar" hidden><span id="modebar-text"></span> <kbd>Esc</kbd> to cancel</div>
@@ -2454,7 +2549,7 @@ body.view-design #toasts { bottom: 24px; }
     // flush rows lie on one roof plane: each row back from the front sits higher by pitch × tan(tilt),
     // so rows do not shade each other (racked rows on a flat roof all start at the same height)
     const rise = z.mount === 'flush' ? pitch * Math.tan(z.tilt * D2R) : 0;
-    runs.forEach((rn, i) => api.newArray({ x: rn.x, y: rn.y, z: rn.row * rise, planeRow: z.mount === 'flush' ? rn.row : null, tilt: z.tilt, azimuth: z.azimuth, rows: 1, cols: rn.cols, rowPitch: pitchFor(z, L), colGap: z.colGap,
+    runs.forEach((rn, i) => api.newArray({ x: rn.x, y: rn.y, z: rn.row * rise, planeRow: z.mount === 'flush' ? rn.row : null, zoneRow: rn.row, tilt: z.tilt, azimuth: z.azimuth, rows: 1, cols: rn.cols, rowPitch: pitchFor(z, L), colGap: z.colGap,
       mountHeight: z.mountHeight, panelModel: z.panelModel, landscape: z.landscape, zone: z.id, name: `${z.name} · row ${rn.row + 1}${runs.filter(x => x.row === rn.row).length > 1 ? String.fromCharCode(97 + runs.filter((x, j) => x.row === rn.row && j < i).length) : ''}` }));
     return runs.reduce((t, r) => t + r.cols, 0);
   }
@@ -2669,8 +2764,8 @@ body.view-design #toasts { bottom: 24px; }
     const kwp = n * p.wp / 1000;
     out.innerHTML = `<div class="result-card"><span class="eyebrow">Roof area ${Math.round(area)} m²</span><div class="rc-big"><b>${n}</b> panels <small>${kwp.toFixed(2)} kWp of ${api.escapeHtml(PN.short(p))}</small></div><p class="hint" id="pl-an-y">Working out a year of output at ${set.tilt}° facing ${api.compass(set.azimuth)}…</p></div>`;
     try {
-      const sy = await api.specificYield(set);
-      $('#pl-an-y').innerHTML = sy ? `About <b>${Math.round(sy * kwp).toLocaleString()} kWh a year</b> (${Math.round(sy)} kWh/kWp from the last 12 months of weather here, unshaded). Rough sizing: edges, vents and roof shape reduce the count.` : 'Weather for a yield estimate is not available right now.';
+      const sy = (await api.specificYield(set)) * api.acFactor();
+      $('#pl-an-y').innerHTML = sy ? `About <b>${Math.round(sy * kwp).toLocaleString()} kWh a year</b> (${Math.round(sy)} kWh/kWp from the last 12 months of weather here, unshaded, after system losses). Rough sizing: edges, vents and roof shape reduce the count.` : 'Weather for a yield estimate is not available right now.';
     } catch (e) { $('#pl-an-y').textContent = 'Yield needs weather: ' + (e.message || e); }
   }
 
@@ -2788,6 +2883,17 @@ body.view-design #toasts { bottom: 24px; }
   }
 
   // ---------------------------------------------------------------- map setup
+  /** Fit the map to the design (panels, roof areas, obstructions), or centre on the site when empty */
+  function focusDesign(animate = true) {
+    if (!map) return;
+    const pts = [];
+    S.arrays.forEach(a => PH.buildArrayGeometry({ ...a, cellsX: 1, cellsY: 1 }).panels.forEach(p => pts.push(p.c)));
+    S.zones.forEach(z => z.poly.forEach(p => pts.push(p)));
+    S.objects.forEach(o => { const r = Math.max(o.dims.length, o.dims.width ?? o.dims.length) / 2; pts.push([o.x - r, o.y - r], [o.x + r, o.y + r]); });
+    if (!pts.length) { map.setView([S.site.lat, S.site.lon], 19, { animate }); return; }
+    const b = L.latLngBounds(pts.map(llOf));
+    map.fitBounds(b.pad(0.15), { padding: [70, 70], maxZoom: 20.5, animate });
+  }
   function setBase(b) {
     base = b;
     [layers.sat, layers.osm].forEach(l => { if (map.hasLayer(l)) map.removeLayer(l); });
@@ -2879,11 +2985,12 @@ body.view-design #toasts { bottom: 24px; }
     init(a) { api = a; S = a.state; PN = a.PN; PH = a.PH; loadD(); wire(); syncInputs(); },
     show() {
       if (!root.L) { $('#pl-map').innerHTML = '<p class="hint" style="padding:20px">The map library (Leaflet) did not load. Check the connection and reload.</p>'; return; }
-      initMap(); setTimeout(() => { map.invalidateSize(); }, 30);
-      if (map) map.setView([S.site.lat, S.site.lon], Math.max(map.getZoom(), 18), { animate: false });
+      initMap(); setTimeout(() => { map.invalidateSize(); focusDesign(false); }, 30);
+      focusDesign(false);
       syncInputs(); redraw(); refreshSummary(); api.renderSavedSites(); api.renderResults();
     },
-    siteMoved(moved) { if (moved) sel = null; if (map) map.setView([S.site.lat, S.site.lon], 19); syncInputs(); redraw(); refreshSummary(); },
+    siteMoved(moved) { if (moved) sel = null; focusDesign(false); syncInputs(); redraw(); refreshSummary(); },
+    focusDesign,
     redraw() { if (S && S.view === 'design') { redraw(); syncInputs(); refreshSummary(); } },
     refreshSummary() { if (S && S.view === 'design') refreshSummary(); },
     // exposed for tests
@@ -2891,6 +2998,957 @@ body.view-design #toasts { bottom: 24px; }
     _map: () => map, _sel: () => sel
   };
   root.ArienPlanner = ArienPlanner;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>/* ARIEN charts — one Chart.js look for every chart in the app: flat bars without outlines, light grid,
+ * units in tooltips and axes. Browser only: window.ArienCharts. */
+(function (root) {
+  'use strict';
+  const css = (n, d) => (getComputedStyle(document.documentElement).getPropertyValue(n).trim() || d);
+  const PALETTE = () => ({ sun: css('--sun', '#f3b23c'), sky: css('--sky', '#6cc3e8'), good: css('--good', '#69c38a'), bad: css('--bad', '#e5675c'),
+    fg: css('--fg', '#e3ebf0'), muted: css('--muted', '#8ea3b1'), grid: 'rgba(150, 186, 206, 0.10)', axis: 'rgba(150, 186, 206, 0.28)' });
+  const FONT = '"IBM Plex Sans", "Segoe UI", system-ui, sans-serif', MONO = '"IBM Plex Mono", ui-monospace, monospace';
+  const fmtNum = (v, d = 0) => v == null || !isFinite(v) ? '—' : Number(v).toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const money = (v, cur = '£', d = 0) => (v < 0 ? '−' : '') + cur + fmtNum(Math.abs(v), d);
+
+  function scales(p, o) {
+    const s = {
+      x: { stacked: !!o.stacked, grid: { display: false }, border: { color: p.axis }, ticks: { color: p.muted, font: { family: MONO, size: 10.5 }, maxRotation: 0, autoSkipPadding: 8 } },
+      y: { stacked: !!o.stacked, beginAtZero: true, grid: { color: p.grid }, border: { display: false }, ticks: { color: p.muted, font: { family: MONO, size: 10.5 }, maxTicksLimit: 5, callback: o.yTick || ((v) => fmtNum(v, Math.abs(v) < 10 && v % 1 ? 1 : 0)) },
+        title: o.yTitle ? { display: true, text: o.yTitle, color: p.muted, font: { family: FONT, size: 11 } } : undefined }
+    };
+    if (o.y2) s.y2 = { position: 'right', grid: { display: false }, border: { display: false }, ticks: { color: p.muted, font: { family: MONO, size: 10.5 }, maxTicksLimit: 5, callback: o.y2Tick },
+      title: o.y2Title ? { display: true, text: o.y2Title, color: p.muted, font: { family: FONT, size: 11 } } : undefined, ...(o.y2Opts || {}) };
+    if (o.xTime) Object.assign(s.x, { type: 'linear', min: o.xMin, max: o.xMax, ticks: { ...s.x.ticks, stepSize: o.xStep, callback: o.xTick } });
+    return s;
+  }
+  function options(p, o) {
+    return {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 250 },
+      interaction: { mode: 'index', intersect: false },
+      layout: { padding: { top: 6, right: 4 } },
+      plugins: {
+        legend: { display: !!o.legend, position: 'bottom', labels: { color: p.muted, boxWidth: 10, boxHeight: 10, usePointStyle: true, pointStyle: 'rectRounded', font: { family: FONT, size: 11.5 } } },
+        tooltip: { backgroundColor: 'rgba(12, 20, 26, 0.96)', borderColor: p.axis, borderWidth: 1, titleColor: p.fg, bodyColor: p.fg, padding: 9, cornerRadius: 6,
+          titleFont: { family: FONT, size: 12, weight: '600' }, bodyFont: { family: MONO, size: 11.5 },
+          callbacks: { label: o.tooltip || ((c) => `${c.dataset.label ? c.dataset.label + ': ' : ''}${fmtNum(c.parsed.y, o.decimals ?? 1)} ${o.unit || ''}`.trim()), ...(o.tooltipTitle ? { title: o.tooltipTitle } : {}) } }
+      },
+      scales: scales(p, o)
+    };
+  }
+  const bar = (data, color, extra = {}) => ({ type: 'bar', data, backgroundColor: color, hoverBackgroundColor: color, borderWidth: 0, borderRadius: 3, borderSkipped: 'start', maxBarThickness: 34, categoryPercentage: 0.72, barPercentage: 0.9, ...extra });
+
+  function make(canvas, config) {
+    if (!root.Chart || !canvas) return null;
+    const old = Chart.getChart(canvas); if (old) old.destroy();
+    return new Chart(canvas, config);
+  }
+  /** Simple bar chart: {labels, values, color, unit, yTitle, decimals, valueLabels} */
+  function bars(canvas, o) {
+    const p = PALETTE();
+    const ds = [bar(o.values, o.color || p.sun, { label: o.label || '' })];
+    const cfg = { type: 'bar', data: { labels: o.labels, datasets: ds }, options: options(p, o) };
+    if (o.valueLabels) cfg.plugins = [valueLabels(p, o)];
+    return make(canvas, cfg);
+  }
+  /** Stacked bars plus an optional line on a second axis: {labels, stacks:[{label, values, color}], line:{label, values, color}} */
+  function combo(canvas, o) {
+    const p = PALETTE();
+    const ds = o.stacks.map(s => bar(s.values, s.color, { label: s.label, stack: 's', yAxisID: 'y', order: 2 }));
+    if (o.line) ds.push({ type: 'line', label: o.line.label, data: o.line.values, borderColor: o.line.color || p.fg, backgroundColor: o.line.color || p.fg, borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25, yAxisID: o.lineAxis || 'y2', order: 1 });
+    return make(canvas, { type: 'bar', data: { labels: o.labels, datasets: ds }, options: options(p, { ...o, stacked: true, legend: true }), plugins: o.zeroLine ? [zeroLine(p, o.lineAxis || 'y2')] : [] });
+  }
+  /** Time series of power through a day: {xs (ms), ys (kW), now, xMin, xMax, offsetMs, cloud (optional %)} */
+  function dayCurve(canvas, o) {
+    const p = PALETTE(), off = o.offsetMs || 0;
+    const hh = (t) => { const d = new Date(t + off); return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
+    const ctxFill = (ctx) => {
+      const { chart } = ctx; const { chartArea } = chart; if (!chartArea) return 'rgba(243,178,60,0.25)';
+      const g = chart.ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom); g.addColorStop(0, 'rgba(243,178,60,0.45)'); g.addColorStop(1, 'rgba(243,178,60,0.02)'); return g;
+    };
+    const ds = [{ type: 'line', label: 'Solar power', data: o.xs.map((x, i) => ({ x, y: o.ys[i] })), borderColor: p.sun, backgroundColor: ctxFill, fill: 'origin', borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.3, yAxisID: 'y' }];
+    if (o.load) ds.push({ type: 'line', label: 'Typical home use', data: o.xs.map((x, i) => ({ x, y: o.load[i] })), borderColor: 'rgba(227,235,240,0.55)', borderDash: [4, 3], borderWidth: 1.3, pointRadius: 0, tension: 0.3, yAxisID: 'y' });
+    if (o.cloud) ds.push({ type: 'line', label: 'Cloud cover', data: o.xs.map((x, i) => ({ x, y: o.cloud[i] })), borderColor: 'rgba(108,195,232,0.6)', borderWidth: 1.2, pointRadius: 0, tension: 0.3, yAxisID: 'y2' });
+    const opt = options(p, { ...o, legend: true, xTime: true, xMin: o.xMin, xMax: o.xMax, xStep: 3 * 3600000, xTick: (v) => hh(v), yTitle: 'kW',
+      y2: !!o.cloud, y2Tick: (v) => v + '%', y2Opts: { min: 0, max: 100 },
+      tooltipTitle: (items) => items.length ? hh(items[0].parsed.x) : '',
+      tooltip: (c) => c.dataset.yAxisID === 'y2' ? `Cloud: ${Math.round(c.parsed.y)}%` : `${c.dataset.label}: ${fmtNum(c.parsed.y, 2)} kW` });
+    return make(canvas, { type: 'line', data: { datasets: ds }, options: opt, plugins: o.now ? [nowMarker(p, o.now)] : [] });
+  }
+  // ---- small plugins
+  function nowMarker(p, t) {
+    return { id: 'nowMarker', afterDatasetsDraw(c) {
+      const x = c.scales.x.getPixelForValue(t); if (x < c.chartArea.left || x > c.chartArea.right) return;
+      const g = c.ctx; g.save(); g.strokeStyle = p.fg; g.globalAlpha = 0.6; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(x, c.chartArea.top); g.lineTo(x, c.chartArea.bottom); g.stroke();
+      g.setLineDash([]); g.globalAlpha = 1; g.fillStyle = p.fg; g.font = `600 10px ${FONT}`; g.textAlign = 'center'; g.fillText('NOW', x, c.chartArea.top - 1); g.restore();
+    } };
+  }
+  function zeroLine(p, axis) {
+    return { id: 'zeroLine', afterDatasetsDraw(c) {
+      const sc = c.scales[axis]; if (!sc) return; const y = sc.getPixelForValue(0); if (y < c.chartArea.top || y > c.chartArea.bottom) return;
+      const g = c.ctx; g.save(); g.strokeStyle = p.axis; g.lineWidth = 1; g.beginPath(); g.moveTo(c.chartArea.left, y); g.lineTo(c.chartArea.right, y); g.stroke(); g.restore();
+    } };
+  }
+  function valueLabels(p, o) {
+    return { id: 'valueLabels', afterDatasetsDraw(c) {
+      const g = c.ctx, meta = c.getDatasetMeta(0); g.save(); g.fillStyle = p.fg; g.font = `500 10.5px ${MONO}`; g.textAlign = 'center';
+      meta.data.forEach((el, i) => { const v = o.values[i]; if (!(v > 0)) return; g.fillText(fmtNum(v, v >= 100 ? 0 : 1), el.x, el.y - 4); }); g.restore();
+    } };
+  }
+  root.ArienCharts = { bars, combo, dayCurve, make, PALETTE, fmtNum, money };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>/* ARIEN finance — household self-consumption, savings, payback, ROI and CO2 for a PV design.
+ * Pure functions (no DOM). Browser: window.ArienFinance; Node: module.exports.
+ * Defaults are UK values researched on 3 Nov 2026; every one is editable in the dashboard and listed in
+ * the report. Battery storage is accepted by selfConsumption() so it plugs in once batteries are designed. */
+(function (root) {
+  'use strict';
+  const DEFAULTS = {
+    currency: 'GBP',
+    importPrice: 26.32,      // p/kWh — Ofgem price cap, 1 Oct–31 Dec 2026, GB average, direct debit
+    exportPrice: 12,         // p/kWh — typical customer SEG rate (Octopus Outgoing, British Gas Export Premium, OVO, ScottishPower), Oct 2026
+    priceInflation: 2,       // %/yr import price growth — assumption: about the Bank of England CPI target (flat in real terms)
+    exportInflation: 0,      // %/yr — export rates are usually fixed or variable, not index-linked
+    annualUse: 2500,         // kWh/yr — Ofgem medium Typical Domestic Consumption Value for electricity from 1 Jul 2026
+    selfUseOverride: null,   // % of generation used on site; null = simulate hour by hour against the household profile
+    systemLosses: 14,        // % inverter, cabling, soiling, mismatch — the 14% PVGIS uses as its standard example
+    firstYearDegradation: 1, // % — JinkoSolar Tiger Neo datasheet (LONGi: under 1.5%)
+    degradation: 0.4,        // %/yr after year 1 — JinkoSolar and LONGi linear power warranties
+    costPerKwp: null,        // £/kWp installed; null = by system size (see costPerKwpFor)
+    totalCostOverride: null, // £ — a quote replaces the estimate
+    inverterReplacement: 1000, // £ — UK fitted price range £600–2,000, typical inverter life 10–15 years (Q3 2026)
+    inverterYear: 12,
+    maintenance: 0,          // £/yr
+    lifetime: 25,            // years — common panel performance-warranty length
+    carbonFactor: 0.13096    // kgCO2e/kWh — DESNZ 2026 GHG conversion factors, UK electricity (generation)
+  };
+  const SOURCES = {
+    importPrice: 'Ofgem, energy price cap 1 October–31 December 2026: 26.32 p/kWh, GB average, direct debit',
+    exportPrice: 'Sunsave SEG rate table (26 Oct 2026): 12 p/kWh offered by Octopus, British Gas, OVO, ScottishPower to their customers',
+    priceInflation: 'Assumption: 2% a year, about the Bank of England CPI target (electricity prices flat in real terms)',
+    annualUse: 'Ofgem Typical Domestic Consumption Value, medium electricity, 2,500 kWh/yr from 1 July 2026',
+    selfUse: 'Hour-by-hour match of generation to a typical household profile; UK field study average 37% (McKenna, Pless & Darby, Energy Policy 2018)',
+    systemLosses: 'PVGIS standard example of 14% system losses (inverter, cabling, soiling, mismatch)',
+    degradation: 'JinkoSolar Tiger Neo and LONGi Hi-MO 6 datasheets: about 1% in year 1, 0.40% a year after',
+    cost: 'DESNZ small-scale solar cost data, median about £1,800–1,900 per kW for typical domestic systems; lower per kW for larger systems',
+    inverter: 'UK fitted replacement £600–2,000, typical life 10–15 years (Best Builders, Q3 2026)',
+    vat: '0% VAT on residential solar in Great Britain until 31 March 2027 (included in the cost)',
+    carbon: 'DESNZ 2026 GHG conversion factors: 0.13096 kgCO2e/kWh, UK electricity generation'
+  };
+  /** Installed cost per kWp by size: small systems cost more per kW */
+  function costPerKwpFor(kwp) { return kwp <= 4 ? 1900 : kwp <= 10 ? 1600 : 1200; }
+
+  // ---------- household demand ----------
+  // Typical domestic daily shape: low overnight, morning and evening peaks, more use in winter.
+  const WEEKDAY = [0.28, 0.24, 0.22, 0.21, 0.21, 0.24, 0.38, 0.55, 0.52, 0.42, 0.38, 0.38, 0.40, 0.38, 0.36, 0.38, 0.48, 0.72, 0.85, 0.80, 0.70, 0.60, 0.48, 0.36];
+  const WEEKEND = [0.30, 0.26, 0.23, 0.22, 0.21, 0.22, 0.28, 0.38, 0.52, 0.58, 0.56, 0.55, 0.56, 0.52, 0.48, 0.48, 0.55, 0.75, 0.86, 0.80, 0.72, 0.62, 0.50, 0.38];
+  const SEASON = [1.22, 1.16, 1.06, 0.96, 0.88, 0.82, 0.80, 0.82, 0.88, 0.98, 1.12, 1.24]; // Jan..Dec
+  const loadShape = (t, offMs) => { const d = new Date(t + offMs); const h = d.getUTCHours(), w = d.getUTCDay(); return ((w === 0 || w === 6) ? WEEKEND : WEEKDAY)[h] * SEASON[d.getUTCMonth()]; };
+  /** Hourly household demand (kWh in each hour) for these hour-start times, scaled to annual use */
+  function loadProfile(times, annualKWh, utcOffsetMs = 0) {
+    const shape = times.map(t => loadShape(t, utcOffsetMs));
+    const sum = shape.reduce((a, b) => a + b, 0) || 1;
+    const hours = times.length || 1;
+    const scale = annualKWh * (hours / 8760) / sum;
+    return shape.map(v => v * scale);
+  }
+  // mean of the shape over a year, so a single moment can be scaled to the annual total
+  const MEAN_SHAPE = (() => { let s = 0; const t0 = Date.UTC(2025, 0, 1); for (let h = 0; h < 8760; h++) s += loadShape(t0 + h * 3600000, 0); return s / 8760; })();
+  /** Demand in kW at any time (for forecasts and recommendations) */
+  function loadAt(t, annualKWh, utcOffsetMs = 0) { return loadShape(t, utcOffsetMs) * annualKWh / (8760 * MEAN_SHAPE); }
+
+  /**
+   * Match generation to demand hour by hour. pv, load: kWh per step (same length).
+   * battery (optional): {capacity kWh, power kW, efficiency 0..1 round trip, stepHours}. Returns energy flows.
+   */
+  function selfConsumption(pv, load, battery) {
+    let self = 0, exp = 0, imp = 0, soc = 0, fromBatt = 0, gen = 0, use = 0;
+    const step = battery && battery.stepHours || 1, eff = battery ? Math.sqrt(battery.efficiency ?? 0.9) : 1;
+    for (let i = 0; i < pv.length; i++) {
+      const p = Math.max(0, pv[i]), l = Math.max(0, load[i]); gen += p; use += l;
+      const direct = Math.min(p, l); self += direct;
+      let surplus = p - direct, deficit = l - direct;
+      if (battery && battery.capacity > 0) {
+        const lim = (battery.power || battery.capacity) * step;
+        if (surplus > 0) { const c = Math.min(surplus, lim, (battery.capacity - soc) / eff); soc += c * eff; surplus -= c; }
+        if (deficit > 0) { const d = Math.min(deficit, lim, soc * eff); soc -= d / eff; deficit -= d; fromBatt += d; }
+      }
+      exp += surplus; imp += deficit;
+    }
+    const used = self + fromBatt;
+    return { generation: gen, demand: use, direct: self, fromBattery: fromBatt, selfUsed: used, exported: exp, imported: imp,
+      selfUseShare: gen > 0 ? used / gen : 0, selfSufficiency: use > 0 ? used / use : 0 };
+  }
+
+  /**
+   * Year-by-year cash flows. inp: {kwp, annualDcKWh, selfUseShare, assumptions}
+   * Returns {years:[{year, generation, selfUsed, exported, importPrice, exportPrice, selfSaving, exportIncome, costs, net, cumulative}], capex, payback, totals(n)}
+   */
+  function cashflow(inp) {
+    const a = { ...DEFAULTS, ...(inp.assumptions || {}) };
+    const kwp = inp.kwp;
+    const capex = a.totalCostOverride != null && a.totalCostOverride > 0 ? a.totalCostOverride : kwp * (a.costPerKwp > 0 ? a.costPerKwp : costPerKwpFor(kwp));
+    const ac1 = inp.annualDcKWh * (1 - a.systemLosses / 100);
+    const share = a.selfUseOverride != null ? a.selfUseOverride / 100 : inp.selfUseShare;
+    const years = []; let cum = -capex, payback = null;
+    for (let y = 1; y <= Math.max(a.lifetime, 25); y++) {
+      const deg = (1 - a.firstYearDegradation / 100) * Math.pow(1 - a.degradation / 100, y - 1);
+      const gen = ac1 * deg, selfUsed = gen * share, exported = gen - selfUsed;
+      const ip = a.importPrice / 100 * Math.pow(1 + a.priceInflation / 100, y - 1);
+      const ep = a.exportPrice / 100 * Math.pow(1 + a.exportInflation / 100, y - 1);
+      const selfSaving = selfUsed * ip, exportIncome = exported * ep;
+      const costs = a.maintenance + (y === a.inverterYear ? a.inverterReplacement : 0);
+      const net = selfSaving + exportIncome - costs;
+      const prev = cum; cum += net;
+      if (payback == null && cum >= 0) payback = y - 1 + (net > 0 ? -prev / net : 0);
+      years.push({ year: y, generation: gen, selfUsed, exported, importPrice: ip, exportPrice: ep, selfSaving, exportIncome, costs, net, cumulative: cum });
+    }
+    const totals = (n) => {
+      const ys = years.slice(0, n);
+      const savings = ys.reduce((s, r) => s + r.selfSaving + r.exportIncome, 0), costs = ys.reduce((s, r) => s + r.costs, 0);
+      const gen = ys.reduce((s, r) => s + r.generation, 0);
+      return { years: n, savings, costs, net: savings - costs - capex, roi: capex > 0 ? (savings - costs - capex) / capex : 0, generation: gen, co2: gen * a.carbonFactor };
+    };
+    return { assumptions: a, capex, costPerKwp: kwp > 0 ? capex / kwp : 0, acYear1: ac1 * (1 - a.firstYearDegradation / 100), selfUseShare: share, years, payback, totals, lifetime: a.lifetime };
+  }
+
+  // ---------- when to run appliances (systems without a battery) ----------
+  const DEVICES = [
+    { id: 'washer', label: 'Washing machine', kw: 0.5, hours: 2 },
+    { id: 'dishwasher', label: 'Dishwasher', kw: 0.6, hours: 2 },
+    { id: 'dryer', label: 'Tumble dryer', kw: 1.8, hours: 1.5 },
+    { id: 'ev', label: 'EV top-up (3-pin, 2.3 kW)', kw: 2.3, hours: 3 },
+    { id: 'immersion', label: 'Hot water (immersion)', kw: 3, hours: 1 }
+  ];
+  /**
+   * Best window for each device on each day. times/kw: forecast generation (kW) at regular steps.
+   * Surplus = generation − household demand; coverage = share of the device's energy met by surplus.
+   */
+  function recommend(times, kw, opts) {
+    const off = opts.utcOffsetMs || 0, annual = opts.annualUse || DEFAULTS.annualUse, now = opts.now || Date.now();
+    const step = times.length > 1 ? (times[1] - times[0]) : 900000, stepH = step / 3600000;
+    const surplus = times.map((t, i) => Math.max(0, kw[i] - loadAt(t, annual, off)));
+    const dayKey = (t) => { const d = new Date(t + off); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - off; };
+    const days = [...new Set(times.map(dayKey))].filter(d => d + 86400000 > now).slice(0, opts.days || 3);
+    return days.map(d => {
+      const idx = times.map((t, i) => i).filter(i => dayKey(times[i]) === d);
+      const gen = idx.reduce((s, i) => s + kw[i] * stepH, 0), sur = idx.reduce((s, i) => s + surplus[i] * stepH, 0);
+      let peakI = idx[0]; idx.forEach(i => { if (kw[i] > kw[peakI]) peakI = i; });
+      const devices = (opts.devices || DEVICES).map(dev => {
+        const n = Math.max(1, Math.round(dev.hours / stepH)); let best = null;
+        for (let k = 0; k + n <= idx.length; k++) {
+          const s = idx[k], t0 = times[s], h = new Date(t0 + off).getUTCHours() + new Date(t0 + off).getUTCMinutes() / 60;
+          if (t0 < now - step || h < 6 || h + dev.hours > 22) continue;
+          let cov = 0, head = 0; for (let j = 0; j < n; j++) { cov += Math.min(surplus[idx[k + j]], dev.kw) * stepH; head += surplus[idx[k + j]] * stepH; }
+          const share = cov / (dev.kw * dev.hours);
+          // most solar coverage first; among equal coverage, the most spare solar (robust if the forecast is a little off)
+          const score = Math.round(share * 100) + Math.min(head / (dev.kw * dev.hours), 5) * 0.1;
+          if (!best || score > best.score + 1e-9) best = { start: t0, end: t0 + dev.hours * 3600000, share, score };
+        }
+        return { ...dev, ...(best || { start: null, end: null, share: 0 }) };
+      });
+      return { day: d, generation: gen, surplus: sur, peakAt: times[peakI], peakKw: kw[peakI] || 0, devices };
+    });
+  }
+
+  const api = { DEFAULTS, SOURCES, DEVICES, costPerKwpFor, loadProfile, loadAt, selfConsumption, cashflow, recommend };
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else root.ArienFinance = api;
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>/* ARIEN Dashboard — the summary a homeowner or installer reads after simulating a design:
+ * overview figures, today's forecast, when to run appliances, finances over 5–20 years,
+ * monthly production, saved sites and the PDF report. Browser: window.ArienDashboard. */
+(function (root) {
+  'use strict';
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  let api = null, S = null, F = null, horizon = 10, busy = false, lastKey = '';
+  const C = () => root.ArienCharts;
+  const num = (v, d = 0) => v == null || !isFinite(v) ? '—' : Number(v).toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const money = (v, d = 0) => (v < 0 ? '−' : '') + '£' + num(Math.abs(v), d);
+  const pct = (v, d = 0) => v == null || !isFinite(v) ? '—' : num(v * 100, d) + '%';
+  const hhmm = (t) => { const d = new Date(t + api.utcOffset()); return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`; };
+  const dayName = (t, i) => i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : api.fmtDay(t);
+
+  const FIELDS = [
+    ['importPrice', 'Electricity import price', 'p/kWh', 'importPrice', 0.01],
+    ['exportPrice', 'Export payment (SEG)', 'p/kWh', 'exportPrice', 0.01],
+    ['priceInflation', 'Import price rise', '% a year', 'priceInflation', 0.1],
+    ['exportInflation', 'Export price rise', '% a year', null, 0.1],
+    ['annualUse', 'Household electricity use', 'kWh a year', 'annualUse', 50],
+    ['selfUseOverride', 'Share of solar used at home', '%', 'selfUse', 1],
+    ['systemLosses', 'System losses', '%', 'systemLosses', 0.5],
+    ['firstYearDegradation', 'Panel ageing, first year', '%', 'degradation', 0.1],
+    ['degradation', 'Panel ageing, later years', '% a year', 'degradation', 0.05],
+    ['costPerKwp', 'Installed cost per kWp', '£/kWp', 'cost', 10],
+    ['totalCostOverride', 'Installed cost (your quote)', '£', 'vat', 10],
+    ['inverterReplacement', 'Inverter replacement', '£', 'inverter', 10],
+    ['inverterYear', 'Inverter replaced in year', '', 'inverter', 1],
+    ['maintenance', 'Maintenance', '£ a year', null, 5],
+    ['lifetime', 'System lifetime', 'years', null, 1],
+    ['carbonFactor', 'Grid carbon intensity', 'kg/kWh', 'carbon', 0.001]
+  ];
+  const assumptions = () => ({ ...F.DEFAULTS, ...S.finance });
+
+  // ---------------------------------------------------------------- numbers
+  function compute() {
+    const y = S.yieldRes; if (!y || !y.hourly) return null;
+    const a = assumptions(), kwp = api.totalKwp(), d = api.designSummary();
+    const h = y.hourly, starts = h.times.map(t => t - 3600000);
+    const load = F.loadProfile(starts, a.annualUse, h.utcOffset);
+    const pvAc = h.kwh.map(v => v * (1 - a.systemLosses / 100));
+    const sc = F.selfConsumption(pvAc, load, S.battery || null);
+    const scBatt = F.selfConsumption(pvAc, load, { capacity: 5, power: 2.5, efficiency: 0.9 });
+    const cf = F.cashflow({ kwp, annualDcKWh: y.total, selfUseShare: sc.selfUseShare, assumptions: S.finance });
+    const y1 = cf.years[0], life = cf.totals(cf.lifetime);
+    const monthly = y.months.map(v => v * (1 - a.systemLosses / 100) * (1 - a.firstYearDegradation / 100));
+    let recos = null, today = null;
+    const f = S.forecastRes;
+    if (f && f.series) {
+      recos = F.recommend(f.series.times, f.series.kw, { utcOffsetMs: api.utcOffset(), annualUse: a.annualUse, now: Date.now(), days: 3 });
+      const off = api.utcOffset(), d0 = new Date(Date.now() + off), t0 = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate()) - off;
+      const idx = f.series.times.map((t, i) => i).filter(i => f.series.times[i] >= t0 && f.series.times[i] < t0 + 86400000);
+      if (idx.length) {
+        const xs = idx.map(i => f.series.times[i]), ys = idx.map(i => f.series.kw[i] * (1 - a.systemLosses / 100));
+        const step = xs.length > 1 ? (xs[1] - xs[0]) / 3600000 : 0.25;
+        let pk = 0; ys.forEach((v, i) => { if (v > ys[pk]) pk = i; });
+        today = { t0, xs, ys, cloud: idx.map(i => f.series.cloud ? f.series.cloud[i] : null), load: xs.map(t => F.loadAt(t, a.annualUse, off)),
+          kwh: ys.reduce((s, v) => s + v * step, 0), peak: ys[pk], peakAt: xs[pk] };
+      }
+    }
+    return { a, kwp, d, sc, scBatt, cf, y1, life, monthly, recos, today, y, f };
+  }
+
+  // ---------------------------------------------------------------- render
+  function card(id, title, body, extra = '') { return `<section class="db-card ${extra}" id="${id}"><header class="db-card-head"><h3>${title}</h3></header>${body}</section>`; }
+  function kpi(label, value, unit, sub, cls = '') { return `<div class="kpi ${cls}"><span class="kpi-label">${label}</span><div class="kpi-value">${value}${unit ? `<small>${unit}</small>` : ''}</div>${sub ? `<p class="kpi-sub">${sub}</p>` : ''}</div>`; }
+
+  function overviewHtml(m) {
+    const a = m.a, y1 = m.y1, saving = y1.selfSaving + y1.exportIncome - a.maintenance;
+    const models = m.d.models.map(p => api.escapeHtml(api.PN.short(p))).join(', ') || 'Custom panels';
+    const extraBatt = (m.scBatt.selfUseShare - m.sc.selfUseShare) * y1.generation * Math.max(0, y1.importPrice - y1.exportPrice);
+    return `<div class="kpis">
+      ${kpi('System capacity', num(m.kwp, 2), 'kWp', `${m.d.groups.length} array${m.d.groups.length === 1 ? '' : 's'} · ${models}`)}
+      ${kpi('Panels', num(m.d.panels), '', m.d.groups.map(g => `${g.id}: ${g.panels} at ${g.tilt}° facing ${api.escapeHtml(compassWord(g.azimuth))}`).slice(0, 3).join('<br>'))}
+      ${kpi('Estimated annual production', num(y1.generation), 'kWh', `${num(y1.generation / Math.max(m.kwp, 1e-6))} kWh per kWp · after ${num(a.systemLosses, 0)}% system losses`)}
+      ${kpi('Estimated annual savings', money(saving), '', `<b>${money(y1.selfSaving)}</b> on bills: ${num(y1.selfUsed)} kWh you use yourself instead of buying it at ${num(a.importPrice, 2)}p<br><b>${money(y1.exportIncome)}</b> export income: ${num(y1.exported)} kWh sold to the grid at ${num(a.exportPrice, 1)}p`, 'wide')}
+      ${kpi('CO₂ reduction', num(y1.generation * a.carbonFactor), 'kg a year', `About ${num(m.life.co2 / 1000, 1)} t over ${m.cf.lifetime} years at today's grid intensity (${a.carbonFactor} kg/kWh)`)}
+      ${kpi('Estimated payback', m.cf.payback != null ? num(m.cf.payback, 1) : `> ${m.cf.years.length}`, 'years', `Installed cost ${money(m.cf.capex)} (${money(m.cf.costPerKwp)}/kWp, 0% VAT)`)}
+      ${kpi('Lifetime return', pct(m.life.roi), '', `${money(m.life.net)} net over ${m.cf.lifetime} years, after the installed cost, inverter replacement and upkeep`)}
+      ${kpi('Battery storage', 'None', '', `Battery and inverter design is coming next. Preview: a 5 kWh battery would raise the share of solar used at home from ${pct(m.sc.selfUseShare)} to ${pct(m.scBatt.selfUseShare)}, worth about ${money(extraBatt)} more a year (battery cost not included).`, 'muted')}
+    </div>`;
+  }
+  const compassWord = (az) => ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][Math.round(((az % 360) + 360) % 360 / 45) % 8];
+
+  function forecastHtml(m) {
+    if (!m.today) return '<p class="hint">The forecast for today is not loaded yet.</p>';
+    const t = m.today, f = m.f;
+    const strip = f.days.map((d, i) => `<div class="day-chip${i === 0 ? ' on' : ''}"><span>${i === 0 ? 'Today' : api.DAYS[new Date(d.t + api.utcOffset()).getUTCDay()]}</span><b>${num(d.kwh * (1 - m.a.systemLosses / 100), 1)}</b><small>kWh</small></div>`).join('');
+    return `<div class="fc-head"><div><span class="fc-big">${num(t.kwh, 1)}</span> kWh expected today</div><div class="hint">Peak ${num(t.peak, 2)} kW at ${hhmm(t.peakAt)} · ${api.escapeHtml(api.modelLabel(f.model))}</div></div>
+      <div class="db-chart tall"><canvas id="db-today-chart"></canvas></div><div class="day-strip">${strip}</div>`;
+  }
+  function recoHtml(m) {
+    if (!m.recos || !m.recos.length) return '<p class="hint">Recommendations need the forecast.</p>';
+    const days = m.recos.map((d, i) => {
+      const rows = d.devices.map(dev => {
+        const good = dev.share >= 0.6, ok = dev.share >= 0.3;
+        const when = dev.start ? `${hhmm(dev.start)}–${hhmm(dev.end)}` : '—';
+        return `<li class="${good ? 'good' : ok ? 'ok' : 'low'}"><span class="dev">${api.escapeHtml(dev.label)}</span><span class="when">${ok ? when : 'Low sun'}</span>
+          <span class="cov"><span style="width:${Math.round(dev.share * 100)}%"></span></span><span class="covn">${ok ? Math.round(dev.share * 100) + '% solar' : 'off-peak'}</span></li>`;
+      }).join('');
+      const head = d.surplus > 0.5 ? `${num(d.surplus, 1)} kWh spare after normal use · peak around ${hhmm(d.peakAt)}` : 'Little spare solar: run big loads on your cheapest tariff hours';
+      return `<div class="reco-day"><div class="reco-day-head"><b>${dayName(d.day, i)}</b><span>${head}</span></div><ul class="reco-list">${rows}</ul></div>`;
+    }).join('');
+    return `<p class="hint">For homes without a battery: start these when your panels make more than the house uses. Windows are for typical appliance loads; the bar shows how much of each run the forecast solar covers.</p>${days}`;
+  }
+  function financeHtml(m) {
+    const segs = [5, 10, 15, 20].map(n => `<button data-h="${n}" aria-pressed="${n === horizon}">${n} years</button>`).join('');
+    const t = m.cf.totals(horizon);
+    return `<div class="fin-top"><div class="seg small" id="db-horizon">${segs}</div>
+      <div class="fin-sum">
+        <div><span>Savings and income</span><b>${money(t.savings)}</b></div>
+        <div><span>Installed cost</span><b>${money(m.cf.capex)}</b></div>
+        <div><span>Other costs</span><b>${money(t.costs)}</b></div>
+        <div class="${t.net >= 0 ? 'pos' : 'neg'}"><span>Net position</span><b>${money(t.net)}</b></div>
+        <div><span>Return</span><b>${pct(t.roi)}</b></div>
+      </div></div>
+      <div class="db-chart tall"><canvas id="db-finance-chart"></canvas></div>
+      <p class="hint">Bars: yearly bill savings and export income. Line: running total after the ${money(m.cf.capex)} installed cost, so it crosses zero at payback${m.cf.payback != null ? ` (year ${num(m.cf.payback, 1)})` : ''}. Import prices rise ${m.a.priceInflation}% a year; panels lose ${m.a.firstYearDegradation}% in year 1 and ${m.a.degradation}% a year after; inverter replaced in year ${m.a.inverterYear}.</p>
+      <details class="db-table"><summary>Year by year</summary><div class="table-wrap"><table class="results"><thead><tr><th>Year</th><th>kWh</th><th>Used at home</th><th>Exported</th><th>Bill saving</th><th>Export</th><th>Costs</th><th>Running total</th></tr></thead><tbody>
+      ${m.cf.years.slice(0, Math.max(horizon, 1)).map(r => `<tr><td>${r.year}</td><td>${num(r.generation)}</td><td>${num(r.selfUsed)}</td><td>${num(r.exported)}</td><td>${money(r.selfSaving)}</td><td>${money(r.exportIncome)}</td><td>${money(r.costs)}</td><td>${money(r.cumulative)}</td></tr>`).join('')}
+      </tbody></table></div></details>`;
+  }
+  function assumptionsHtml(m) {
+    const a = m.a, src = F.SOURCES;
+    const auto = { selfUseOverride: num(m.sc.selfUseShare * 100, 0), costPerKwp: num(F.costPerKwpFor(m.kwp)), totalCostOverride: num(m.kwp * (a.costPerKwp > 0 ? a.costPerKwp : F.costPerKwpFor(m.kwp))) };
+    const rows = FIELDS.map(([k, label, unit, srcKey, step]) => {
+      const v = S.finance[k], val = v == null ? (auto[k] != null ? '' : F.DEFAULTS[k]) : v;
+      const ph = auto[k] != null ? auto[k] : '';
+      return `<label class="as-row" title="${api.escapeHtml(srcKey ? src[srcKey] : 'Assumption')}"><span>${label}</span><span class="as-in"><input type="number" step="${step}" data-k="${k}" value="${val === '' ? '' : val}" placeholder="${ph}"><small>${unit}</small></span></label>`;
+    }).join('');
+    return `<div class="as-grid">${rows}</div><div class="row"><button class="btn ghost" id="db-as-reset">Reset to UK defaults</button></div>
+      <p class="hint">Blue values are worked out for you; type a number to replace one. UK defaults, checked 3 Nov 2026: Ofgem price cap Oct–Dec 2026 (26.32p), a typical 12p export tariff, Ofgem's 2,500 kWh medium household, DESNZ 2026 carbon factor, DESNZ cost data, panel warranties. Hover a row for its source.</p>`;
+  }
+  function monthlyHtml(m) {
+    const tot = m.monthly.reduce((s, v) => s + v, 0);
+    return `<div class="fc-head"><div><span class="fc-big">${num(tot)}</span> kWh in year 1</div><div class="hint">${api.escapeHtml(api.modelLabel(m.y.model))} on ERA5 weather, ${api.fmtDay(m.y.start)} ${new Date(m.y.start).getUTCFullYear()} – ${api.fmtDay(m.y.end)} ${new Date(m.y.end).getUTCFullYear()}, after ${m.a.systemLosses}% system losses</div></div>
+      <div class="db-chart tall"><canvas id="db-monthly-chart"></canvas></div>`;
+  }
+  function sitesHtml() {
+    const list = api.listSites();
+    if (!list.length) return '<p class="hint">No saved sites yet. Save a design in the Design view or the Site panel.</p>';
+    return `<ul class="site-list">${list.map(x => {
+      const arrs = x.snap.arrays || [], n = arrs.reduce((t, a) => t + a.rows * a.cols, 0), kwp = arrs.reduce((t, a) => t + api.PN.arrayKwp(a), 0);
+      const d = new Date(x.savedAt), place = (x.snap.site && x.snap.site.name || '').split(',').slice(0, 2).join(',');
+      return `<li><div class="sl-main"><b>${api.escapeHtml(x.name)}</b><small>${api.escapeHtml(place)} · ${n} panels · ${num(kwp, 2)} kWp · saved ${d.getDate()} ${api.MONTHS[d.getMonth()]} ${d.getFullYear()}</small></div>
+        <div class="sl-act"><button class="btn" data-open="${x.id}" data-view="design">Edit design</button><button class="btn" data-open="${x.id}" data-view="twin">Open in 3D</button><button class="icon-btn danger" data-del="${x.id}" title="Delete"><svg><use href="#i-trash"/></svg></button></div></li>`;
+    }).join('')}</ul>`;
+  }
+  function reportHtml() {
+    return `<div class="report-box"><div><b>Site report (PDF)</b><p class="hint">Satellite map with your layout, an engineering plan of the arrays, system specification, monthly yield, 7-day forecast, financial summary and every assumption, watermarked “Generated by Arien”.</p></div>
+      <button class="btn primary" id="db-pdf"><svg><use href="#i-save"/></svg>Download PDF report</button></div><div class="status" id="db-pdf-status"></div>`;
+  }
+
+  function render() {
+    const root_ = $('#db-body');
+    if (!S.arrays.length) {
+      root_.innerHTML = `<div class="db-empty"><h3>Design a system to see its dashboard</h3><p class="hint">Place panels on the satellite map, simulate them in 3D, then come back here for production, savings and the report.</p><button class="btn primary" id="db-go-design">Open Design</button></div>
+        ${card('db-sites', 'My sites', sitesHtml())}`;
+      $('#db-go-design').onclick = () => api.newDesign(); wireCommon(); setFoot(null); return;
+    }
+    const m = compute();
+    if (!m) {
+      root_.innerHTML = `<div class="db-empty"><span class="spinner"></span><h3>${busy ? 'Simulating a year of weather and the next 7 days…' : 'Results needed'}</h3><p class="hint">${busy ? 'This takes a few seconds.' : 'Run the forecast and yield estimate for this design.'}</p>${busy ? '' : '<button class="btn primary" id="db-run">Run now</button>'}</div>${card('db-sites', 'My sites', sitesHtml())}`;
+      const r = $('#db-run'); if (r) r.onclick = () => run(); wireCommon(); setFoot(null); return;
+    }
+    const stale = (S.yieldRes && S.yieldRes.stale) || (S.forecastRes && S.forecastRes.stale);
+    $('#db-site').textContent = api.siteLabel();
+    $('#db-sub').textContent = `${S.site.name} · ${S.site.lat.toFixed(5)}, ${S.site.lon.toFixed(5)} · ${num(m.kwp, 2)} kWp`;
+    root_.innerHTML = `${stale ? '<div class="db-stale">The design changed since these results. <button class="btn" id="db-rerun">Update results</button></div>' : ''}
+      ${card('db-overview', 'Overview', overviewHtml(m), 'span-12')}
+      ${card('db-forecast', 'Today’s forecast', forecastHtml(m), 'span-7')}
+      ${card('db-reco', 'Recommendations', recoHtml(m), 'span-5')}
+      ${card('db-finance', 'Financial overview', financeHtml(m), 'span-12')}
+      ${card('db-monthly', 'Monthly production', monthlyHtml(m), 'span-12')}
+      ${card('db-assume', 'Assumptions', assumptionsHtml(m), 'span-12')}
+      ${card('db-sites', 'My sites', sitesHtml(), 'span-7')}
+      ${card('db-reports', 'Reports', reportHtml(), 'span-5')}`;
+    drawCharts(m); wireCommon(); setFoot(m);
+    const rr = $('#db-rerun'); if (rr) rr.onclick = () => run(true);
+    $('#db-horizon').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; horizon = +b.dataset.h; render(); };
+    $('#db-assume').addEventListener('change', (e) => {
+      const el = e.target.closest('input[data-k]'); if (!el) return;
+      const k = el.dataset.k, v = el.value.trim();
+      if (v === '') delete S.finance[k]; else { const n = Number(v); if (isFinite(n)) S.finance[k] = n; }
+      api.saveSoon(); render();
+    });
+    $('#db-as-reset').onclick = () => { S.finance = {}; api.saveSoon(); render(); };
+    $('#db-pdf').onclick = () => downloadReport(m);
+  }
+  function wireCommon() {
+    $$('[data-open]', $('#db-body')).forEach(b => { b.onclick = () => api.openSite(b.dataset.open, b.dataset.view); });
+    $$('[data-del]', $('#db-body')).forEach(b => { b.onclick = () => {
+      if (b.dataset.armed) { api.deleteSite(b.dataset.del); render(); return; }
+      b.dataset.armed = '1'; b.classList.add('armed'); b.title = 'Click again to delete'; setTimeout(() => { delete b.dataset.armed; b.classList.remove('armed'); }, 3000);
+    }; });
+  }
+  function setFoot(m) {
+    const now = new Date();
+    const src = api.weatherSources();
+    $('#db-foot').innerHTML = `<span>Generated ${now.getDate()} ${api.MONTHS[now.getMonth()]} ${now.getFullYear()}, ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}</span>
+      <span>Weather data: ${src.length ? api.escapeHtml(src.join('; ')) : 'Open-Meteo.com (CC BY 4.0)'}. Open-Meteo data is CC BY 4.0; ERA5 contains modified Copernicus Climate Change Service information.</span>
+      <span>Prices, costs and carbon: see Assumptions. Estimates, not a quote.</span>`;
+  }
+  function drawCharts(m) {
+    const Ch = C(); if (!Ch) return; const P = Ch.PALETTE();
+    if (m.today) Ch.dayCurve($('#db-today-chart'), { xs: m.today.xs, ys: m.today.ys, load: m.today.load, cloud: m.today.cloud.every(v => v == null) ? null : m.today.cloud, now: Date.now(), xMin: m.today.t0, xMax: m.today.t0 + 86400000, offsetMs: api.utcOffset() });
+    const ys = m.cf.years.slice(0, horizon);
+    Ch.combo($('#db-finance-chart'), { labels: ys.map(r => 'Y' + r.year), stacks: [{ label: 'Bill savings', values: ys.map(r => r.selfSaving), color: P.sun }, { label: 'Export income', values: ys.map(r => r.exportIncome), color: P.sky }],
+      line: { label: 'Running total', values: ys.map(r => r.cumulative), color: P.good }, yTitle: '£ a year', y2: true, y2Title: '£ running total', zeroLine: true,
+      yTick: (v) => '£' + num(v), y2Tick: (v) => (v < 0 ? '−£' : '£') + num(Math.abs(v)), tooltip: (c) => `${c.dataset.label}: ${money(c.parsed.y)}` });
+    Ch.bars($('#db-monthly-chart'), { labels: api.MONTHS, values: m.monthly, color: P.sky, unit: 'kWh', decimals: 0, yTitle: 'kWh', valueLabels: true });
+  }
+
+  async function downloadReport(m) {
+    const st = $('#db-pdf-status'), btn = $('#db-pdf');
+    if (!root.ArienReport) { st.textContent = 'The report module did not load.'; return; }
+    btn.disabled = true; st.className = 'status'; st.textContent = 'Building the report: map imagery, plan and charts…';
+    try {
+      const name = await root.ArienReport.download(reportData(m), (msg) => { st.textContent = msg; });
+      st.className = 'status ok'; st.textContent = `Downloaded ${name}.`;
+    } catch (e) { st.className = 'status err'; st.textContent = 'Could not build the PDF: ' + (e.message || e); }
+    finally { btn.disabled = false; }
+  }
+  /** Plain data for the report (no DOM): design geometry, results, finance and sources */
+  function reportData(m) {
+    const a = m.a, src = F.SOURCES;
+    const asRows = FIELDS.map(([k, label, unit, srcKey]) => {
+      const v = S.finance[k];
+      const shown = k === 'selfUseOverride' ? (v == null ? `${num(m.sc.selfUseShare * 100, 0)}% (simulated)` : `${v}%`)
+        : k === 'costPerKwp' ? (v == null ? `£${num(F.costPerKwpFor(m.kwp))}/kWp (by size)` : `£${num(v)}/kWp`)
+        : k === 'totalCostOverride' ? (v == null ? `£${num(m.cf.capex)} (estimate)` : `£${num(v)} (quote)`)
+        : unit === '£' ? `£${num(a[k])}` : unit === '£ a year' ? `£${num(a[k])} a year`
+        : `${a[k]}${unit ? (unit.startsWith('%') ? '' : ' ') + unit : ''}`;
+      return [label, shown, srcKey ? src[srcKey] : 'ARIEN default', v != null];
+    });
+    return {
+      title: api.siteLabel(), site: { ...S.site }, generatedAt: new Date(), weatherSources: api.weatherSources(),
+      design: m.d, zones: S.zones.map(z => ({ name: z.name, poly: z.poly })), objects: S.objects.map(o => ({ type: o.type, label: api.PH.OBJECT_TYPES[o.type].label, x: o.x, y: o.y, heading: o.heading, dims: { ...o.dims } })),
+      kpis: { kwp: m.kwp, panels: m.d.panels, production: m.y1.generation, savings: m.y1.selfSaving + m.y1.exportIncome - a.maintenance, selfSaving: m.y1.selfSaving, exportIncome: m.y1.exportIncome,
+        selfUsed: m.y1.selfUsed, exported: m.y1.exported, co2: m.y1.generation * a.carbonFactor, payback: m.cf.payback, roi: m.life.roi, net: m.life.net, capex: m.cf.capex, lifetime: m.cf.lifetime, selfUseShare: m.sc.selfUseShare, specific: m.y1.generation / Math.max(m.kwp, 1e-6) },
+      monthly: m.monthly, monthsLabel: api.MONTHS, yieldInfo: { model: api.modelLabel(m.y.model), start: m.y.start, end: m.y.end, shadingLoss: m.y.shadingLoss, dcTotal: m.y.total, systemLosses: a.systemLosses },
+      forecast: m.f ? { model: api.modelLabel(m.f.model), days: m.f.days.map(d => ({ t: d.t, label: api.fmtDay(d.t), kwh: d.kwh * (1 - a.systemLosses / 100) })), source: m.f.source } : null,
+      finance: { horizons: [5, 10, 15, 20, m.cf.lifetime].map(n => m.cf.totals(n)), years: m.cf.years.slice(0, m.cf.lifetime), capex: m.cf.capex, payback: m.cf.payback },
+      assumptions: asRows, utcOffset: api.utcOffset(), models: m.d.models
+    };
+  }
+
+  async function run(force) {
+    if (busy) return; busy = true; render();
+    try { if (force) { if (S.yieldRes) S.yieldRes.stale = true; if (S.forecastRes) S.forecastRes.stale = true; } await api.ensureResults(); }
+    finally { busy = false; render(); }
+  }
+
+  root.ArienDashboard = {
+    init(a) { api = a; S = a.state; F = root.ArienFinance; $$('#dashboard [data-goto]').forEach(btn => { btn.onclick = () => api.setView(btn.dataset.goto); }); },
+    show() {
+      render();
+      const need = S.arrays.length && (!S.yieldRes || !S.forecastRes || !S.forecastRes.series);
+      if (need) run();
+    },
+    refresh() {
+      if (!S || S.view !== 'dashboard' || busy) return;
+      const key = [S.yieldRes && S.yieldRes.at, S.yieldRes && S.yieldRes.stale, S.forecastRes && S.forecastRes.at, S.forecastRes && S.forecastRes.stale, S.arrays.length].join('|');
+      if (key !== lastKey) { lastKey = key; render(); }
+    },
+    _compute: () => compute(), _reportData: () => { const m = compute(); return m && reportData(m); }
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+</script>
+<script>/* ARIEN site report — A4 PDF built in the browser with jsPDF (loaded on first use).
+ * Pages: summary with satellite map and layout · engineering plan · system and yield · finance · assumptions.
+ * Every page carries the "Generated by Arien" watermark and a footer with the date and weather sources.
+ * Browser: window.ArienReport.download(data, onProgress). */
+(function (root) {
+  'use strict';
+  const JSPDF_URL = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+  const D2R = Math.PI / 180;
+  const INK = [26, 35, 48], MUTED = [91, 107, 120], LINE = [201, 210, 218], SOFT = [242, 245, 248];
+  const BRAND = [63, 87, 184], SUN = [229, 159, 28], SKY = [47, 143, 194], GOOD = [46, 155, 95], BAD = [201, 74, 63], PANEL = [27, 45, 71];
+  const PAGE = { w: 210, h: 297, m: 14 };
+  const num = (v, d = 0) => v == null || !isFinite(v) ? '-' : Number(v).toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
+  const money = (v, d = 0) => (v < 0 ? '-' : '') + '£' + num(Math.abs(v), d);
+  const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  /** Standard PDF fonts cover Latin-1 only: map typographic characters and drop the rest */
+  const T = (s) => String(s ?? '').replace(/[−–—]/g, '-').replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/…/g, '...').replace(/₂/g, '2').replace(/→/g, '->').replace(/✓/g, '').replace(/[^\x00-\xFF]/g, '');
+  const fmtDate = (d) => `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  const isoDay = (t) => new Date(t).toISOString().slice(0, 10);
+
+  function loadScript(url) {
+    return new Promise((res, rej) => {
+      if (root.jspdf && root.jspdf.jsPDF) return res();
+      const el = document.createElement('script'); el.src = url; el.async = true;
+      el.onload = () => res(); el.onerror = () => rej(new Error('Could not load the PDF library from cdnjs.cloudflare.com.'));
+      document.head.appendChild(el);
+    });
+  }
+
+  // ---------------------------------------------------------------- geometry shared by the map and the plan
+  function radii(site) {
+    const a = 6378137, e2 = 0.00669437999014, sn = Math.sin(site.lat * D2R), den = 1 - e2 * sn * sn;
+    return { kx: a / Math.sqrt(den) * Math.cos(site.lat * D2R) * D2R, ky: a * (1 - e2) / Math.pow(den, 1.5) * D2R };
+  }
+  const en2ll = (site, x, y) => { const r = radii(site); return [site.lat + y / r.ky, site.lon + x / r.kx]; };
+  function panelPolys(design) {
+    const out = [];
+    design.groups.forEach((g, gi) => g.geoms.forEach(geo => geo.panels.forEach(p => {
+      out.push({ group: gi, pts: [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => [p.c[0] + p.u[0] * p.hu * i + p.v[0] * p.hv * j, p.c[1] + p.u[1] * p.hu * i + p.v[1] * p.hv * j]) });
+    })));
+    return out;
+  }
+  function objectShape(o) {
+    if (o.type === 'tree' || o.type === 'conifer' || o.type === 'pole') return { circle: true, c: [o.x, o.y], r: Math.max(0.3, o.dims.length / 2) };
+    const h = -o.heading * D2R, c = Math.cos(h), s = Math.sin(h), hl = o.dims.length / 2, hw = (o.dims.width ?? o.dims.length) / 2;
+    return { circle: false, pts: [[-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]].map(([x, y]) => [o.x + x * c - y * s, o.y + x * s + y * c]) };
+  }
+  function bounds(data, pad = 0) {
+    const pts = [];
+    panelPolys(data.design).forEach(p => pts.push(...p.pts));
+    data.zones.forEach(z => pts.push(...z.poly));
+    data.objects.forEach(o => { const sh = objectShape(o); if (sh.circle) pts.push([sh.c[0] - sh.r, sh.c[1] - sh.r], [sh.c[0] + sh.r, sh.c[1] + sh.r]); else pts.push(...sh.pts); });
+    if (!pts.length) pts.push([-5, -5], [5, 5]);
+    return { x0: Math.min(...pts.map(p => p[0])) - pad, x1: Math.max(...pts.map(p => p[0])) + pad, y0: Math.min(...pts.map(p => p[1])) - pad, y1: Math.max(...pts.map(p => p[1])) + pad };
+  }
+  function groupCentroid(design, gi) {
+    const pts = panelPolys(design).filter(p => p.group === gi).flatMap(p => p.pts);
+    return [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
+  }
+
+  // ---------------------------------------------------------------- satellite image with the layout drawn on it
+  function loadImg(url, timeout = 9000) {
+    return new Promise((res) => {
+      const im = new Image(); im.crossOrigin = 'anonymous'; let done = false;
+      const fin = (ok) => { if (done) return; done = true; res(ok ? im : null); };
+      im.onload = () => fin(true); im.onerror = () => fin(false); setTimeout(() => fin(false), timeout); im.src = url;
+    });
+  }
+  async function satelliteImage(data, aspect, onProgress) {
+    const site = data.site;
+    let b = bounds(data, 6);
+    // at least 36 m across, and the page's aspect ratio
+    let w = Math.max(36, b.x1 - b.x0), h = Math.max(36 / aspect, b.y1 - b.y0);
+    if (w / h < aspect) w = h * aspect; else h = w / aspect;
+    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+    b = { x0: cx - w / 2, x1: cx + w / 2, y0: cy - h / 2, y1: cy + h / 2 };
+    const [latN, lonW] = en2ll(site, b.x0, b.y1), [latS, lonE] = en2ll(site, b.x1, b.y0);
+    const merc = (lat, lon, z) => { const n = 256 * 2 ** z, s = Math.sin(lat * D2R); return [(lon + 180) / 360 * n, (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * n]; };
+    const OUT_W = 1600, OUT_H = Math.round(OUT_W / aspect);
+    let z = 19; while (z > 12 && (merc(latS, lonE, z)[0] - merc(latN, lonW, z)[0]) > OUT_W * 1.4) z--;
+    const [px0, py0] = merc(latN, lonW, z), [px1, py1] = merc(latS, lonE, z), sx = OUT_W / (px1 - px0), sy = OUT_H / (py1 - py0);
+    const sources = [
+      { url: (x, y, zz) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${zz}/${y}/${x}`, credit: 'Imagery © Esri, Maxar, Earthstar Geographics' },
+      { url: (x, y, zz) => `https://tile.openstreetmap.org/${zz}/${x}/${y}.png`, credit: '© OpenStreetMap contributors' }
+    ];
+    for (const src of sources) {
+      const cv = document.createElement('canvas'); cv.width = OUT_W; cv.height = OUT_H; const g = cv.getContext('2d');
+      g.fillStyle = '#d9dee3'; g.fillRect(0, 0, OUT_W, OUT_H);
+      const tiles = [];
+      for (let tx = Math.floor(px0 / 256); tx <= Math.floor(px1 / 256); tx++) for (let ty = Math.floor(py0 / 256); ty <= Math.floor(py1 / 256); ty++) tiles.push([tx, ty]);
+      if (onProgress) onProgress(`Fetching ${tiles.length} map tiles…`);
+      const imgs = await Promise.all(tiles.map(([tx, ty]) => loadImg(src.url(tx, ty, z))));
+      if (imgs.filter(Boolean).length < tiles.length * 0.5) continue;
+      imgs.forEach((im, i) => { if (im) g.drawImage(im, (tiles[i][0] * 256 - px0) * sx, (tiles[i][1] * 256 - py0) * sy, 256 * sx + 0.6, 256 * sy + 0.6); });
+      const toPx = (x, y) => { const [la, lo] = en2ll(site, x, y); const m = merc(la, lo, z); return [(m[0] - px0) * sx, (m[1] - py0) * sy]; };
+      drawOverlay(g, data, toPx, OUT_W, OUT_H, (b.x1 - b.x0) / OUT_W, src.credit);
+      try { return { dataUrl: cv.toDataURL('image/jpeg', 0.9), credit: src.credit, widthM: b.x1 - b.x0, zoom: z }; }
+      catch (e) { /* tainted canvas: try the next source */ }
+    }
+    return null;
+  }
+  function drawOverlay(g, data, toPx, W, H, mPerPx, credit) {
+    const path = (pts) => { g.beginPath(); pts.forEach((p, i) => { const [x, y] = toPx(p[0], p[1]); if (i) g.lineTo(x, y); else g.moveTo(x, y); }); g.closePath(); };
+    g.lineJoin = 'round';
+    data.zones.forEach(z => { path(z.poly); g.setLineDash([12, 8]); g.strokeStyle = 'rgba(243,178,60,0.95)'; g.lineWidth = 3; g.stroke(); g.setLineDash([]); });
+    panelPolys(data.design).forEach(p => { path(p.pts); g.fillStyle = 'rgba(27,45,71,0.92)'; g.fill(); g.strokeStyle = 'rgba(214,226,238,0.9)'; g.lineWidth = 1.4; g.stroke(); });
+    data.objects.forEach(o => {
+      const sh = objectShape(o);
+      g.strokeStyle = o.type === 'tree' || o.type === 'conifer' || o.type === 'hedge' ? '#7ad07e' : '#f0f0f0'; g.lineWidth = 2.5; g.fillStyle = 'rgba(255,255,255,0.12)';
+      if (sh.circle) { const [x, y] = toPx(sh.c[0], sh.c[1]); g.beginPath(); g.arc(x, y, sh.r / mPerPx, 0, 2 * Math.PI); g.fill(); g.stroke(); }
+      else { path(sh.pts); g.fill(); g.stroke(); }
+    });
+    // array labels
+    g.font = '600 26px Helvetica, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    data.design.groups.forEach((gr, gi) => {
+      const [x, y] = toPx(...groupCentroid(data.design, gi));
+      g.fillStyle = 'rgba(243,178,60,0.95)'; g.beginPath(); g.arc(x, y - 0, 22, 0, 2 * Math.PI); g.fill(); g.fillStyle = '#1a1305'; g.fillText(gr.id, x, y + 1);
+    });
+    // north arrow
+    g.save(); g.translate(W - 60, 70); g.fillStyle = 'rgba(10,17,22,0.75)'; g.beginPath(); g.arc(0, 0, 40, 0, 2 * Math.PI); g.fill();
+    g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(0, -28); g.lineTo(12, 14); g.lineTo(0, 6); g.lineTo(-12, 14); g.closePath(); g.fill();
+    g.font = '700 18px Helvetica, Arial, sans-serif'; g.fillText('N', 0, 26); g.restore();
+    // scale bar
+    const nice = [2, 5, 10, 20, 50, 100].find(v => v / mPerPx > 160) || 100, len = nice / mPerPx;
+    g.fillStyle = 'rgba(10,17,22,0.75)'; g.fillRect(24, H - 64, len + 40, 44);
+    g.fillStyle = '#ffffff'; g.fillRect(44, H - 38, len, 6); g.fillStyle = '#1b2d47'; g.fillRect(44, H - 38, len / 2, 6);
+    g.strokeStyle = '#ffffff'; g.lineWidth = 1.5; g.strokeRect(44, H - 38, len, 6);
+    g.fillStyle = '#ffffff'; g.font = '500 16px Helvetica, Arial, sans-serif'; g.textAlign = 'left'; g.fillText('0', 40, H - 50); g.textAlign = 'right'; g.fillText(`${nice} m`, 44 + len + 8, H - 50);
+    // credit
+    g.font = '500 15px Helvetica, Arial, sans-serif'; const tw = g.measureText(credit).width;
+    g.fillStyle = 'rgba(255,255,255,0.8)'; g.fillRect(W - tw - 20, H - 26, tw + 20, 26); g.fillStyle = '#333'; g.textAlign = 'right'; g.textBaseline = 'middle'; g.fillText(credit, W - 10, H - 13);
+  }
+
+  // ---------------------------------------------------------------- PDF building blocks
+  function setC(doc, c, what = 'text') { if (what === 'text') doc.setTextColor(...c); else if (what === 'draw') doc.setDrawColor(...c); else doc.setFillColor(...c); }
+  function watermark(doc) {
+    doc.saveGraphicsState();
+    if (doc.GState) doc.setGState(new doc.GState({ opacity: 0.07 }));
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(54); setC(doc, BRAND);
+    doc.text('Generated by Arien', PAGE.w / 2, PAGE.h / 2 + 10, { angle: 35, align: 'center' });
+    doc.restoreGraphicsState();
+  }
+  function header(doc, title, data) {
+    setC(doc, BRAND, 'fill'); doc.rect(0, 0, PAGE.w, 16, 'F');
+    if (data.logo) try { doc.addImage(data.logo, 'PNG', PAGE.m, 4.2, 34, 34 * 0.206); } catch (e) { /* logo optional */ }
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); setC(doc, [255, 255, 255]);
+    doc.text(T(title.toUpperCase()), PAGE.w - PAGE.m, 10, { align: 'right' });
+    return 26;
+  }
+  function footer(doc, data, page, total) {
+    const y = PAGE.h - 14;
+    setC(doc, LINE, 'draw'); doc.setLineWidth(0.2); doc.line(PAGE.m, y - 3, PAGE.w - PAGE.m, y - 3);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); setC(doc, MUTED);
+    doc.text(T(`Generated ${fmtDate(data.generatedAt)} by ARIEN Twin Studio · ${data.title}`), PAGE.m, y);
+    doc.text(`Page ${page} of ${total}`, PAGE.w - PAGE.m, y, { align: 'right' });
+    const src = 'Weather data: ' + (data.weatherSources.length ? data.weatherSources.join('; ') : 'Open-Meteo.com') + '. Open-Meteo data CC BY 4.0; ERA5 contains modified Copernicus Climate Change Service information.';
+    doc.text(doc.splitTextToSize(T(src), PAGE.w - 2 * PAGE.m).slice(0, 2), PAGE.m, y + 3.5);
+  }
+  function h2(doc, text, y) { doc.setFont('helvetica', 'bold'); doc.setFontSize(12); setC(doc, INK); doc.text(T(text), PAGE.m, y); setC(doc, SUN, 'fill'); doc.rect(PAGE.m, y + 1.6, 12, 0.8, 'F'); return y + 8; }
+  function para(doc, text, x, y, w, size = 9, color = MUTED) {
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(size); setC(doc, color);
+    const lines = doc.splitTextToSize(T(text), w); doc.text(lines, x, y); return y + lines.length * size * 0.42 + 1.5;
+  }
+  /** rows: array of arrays; opts: {widths (mm), header, align: [...], size, zebra} → returns y after the table */
+  function table(doc, x, y, rows, opts) {
+    const widths = opts.widths, size = opts.size || 8.5, lh = size * 0.42 + 2.6;
+    const drawRow = (r, isHead, yy, shade) => {
+      const cells = r.map((c, i) => doc.splitTextToSize(T(c), widths[i] - 3));
+      const hgt = Math.max(...cells.map(c => c.length)) * size * 0.42 + 2.6;
+      if (isHead) { setC(doc, SOFT, 'fill'); doc.rect(x, yy, widths.reduce((a, b) => a + b, 0), hgt, 'F'); }
+      else if (shade) { setC(doc, [249, 250, 252], 'fill'); doc.rect(x, yy, widths.reduce((a, b) => a + b, 0), hgt, 'F'); }
+      let cx = x;
+      cells.forEach((c, i) => {
+        doc.setFont('helvetica', isHead || (opts.boldFirst && i === 0) ? 'bold' : 'normal'); doc.setFontSize(size); setC(doc, isHead ? MUTED : INK);
+        const al = (opts.align && opts.align[i]) || 'left';
+        doc.text(c, al === 'right' ? cx + widths[i] - 1.5 : cx + 1.5, yy + size * 0.42 + 0.8, { align: al });
+        cx += widths[i];
+      });
+      setC(doc, LINE, 'draw'); doc.setLineWidth(0.15); doc.line(x, yy + hgt, x + widths.reduce((a, b) => a + b, 0), yy + hgt);
+      return yy + hgt;
+    };
+    if (opts.header) y = drawRow(opts.header, true, y);
+    rows.forEach((r, i) => { y = drawRow(r, false, y, opts.zebra && i % 2); });
+    return y + 2;
+  }
+  function barChart(doc, x, y, w, h, labels, values, o = {}) {
+    const max = Math.max(...values, 0.001), nice = niceMax(max), n = values.length, pad = 9, ch = h - 8, bw = (w - pad) / n;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); setC(doc, MUTED);
+    for (let k = 0; k <= 4; k++) {
+      const v = nice * k / 4, yy = y + ch - ch * k / 4;
+      setC(doc, k ? [232, 236, 240] : LINE, 'draw'); doc.setLineWidth(k ? 0.15 : 0.3); doc.line(x + pad, yy, x + w, yy);
+      doc.text(num(v, v < 10 && v % 1 ? 1 : 0), x + pad - 1.5, yy + 1, { align: 'right' });
+    }
+    values.forEach((v, i) => {
+      const bh = ch * v / nice, bx = x + pad + i * bw + bw * 0.16;
+      setC(doc, o.color || SKY, 'fill'); doc.rect(bx, y + ch - bh, bw * 0.68, bh, 'F');
+      doc.setFontSize(6.5); setC(doc, MUTED); doc.text(T(labels[i]), bx + bw * 0.34, y + ch + 4, { align: 'center' });
+      if (o.values) { setC(doc, INK); doc.text(num(v, v >= 100 ? 0 : 1), bx + bw * 0.34, y + ch - bh - 1.2, { align: 'center' }); }
+    });
+    if (o.unit) { doc.setFontSize(6.5); setC(doc, MUTED); doc.text(T(o.unit), x, y - 2); }
+  }
+  function niceMax(v) { const p = 10 ** Math.floor(Math.log10(v)), f = v / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; }
+  function cumulativeChart(doc, x, y, w, h, years, payback) {
+    const vals = years.map(r => r.cumulative), lo = Math.min(0, ...vals), hi = Math.max(0, ...vals), span = (hi - lo) || 1, pad = 16, ch = h - 8;
+    const X = (i) => x + pad + (w - pad) * (i + 0.5) / years.length, Y = (v) => y + ch - ch * (v - lo) / span;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+    for (let k = 0; k <= 4; k++) {
+      const v = lo + span * k / 4; setC(doc, [232, 236, 240], 'draw'); doc.setLineWidth(0.15); doc.line(x + pad, Y(v), x + w, Y(v));
+      setC(doc, MUTED); doc.text(money(v), x + pad - 1.5, Y(v) + 1, { align: 'right' });
+    }
+    setC(doc, MUTED, 'draw'); doc.setLineWidth(0.35); doc.line(x + pad, Y(0), x + w, Y(0));
+    years.forEach((r, i) => { const v = r.cumulative; setC(doc, v >= 0 ? GOOD : [214, 222, 230], 'fill'); const top = Math.min(Y(v), Y(0)); doc.rect(X(i) - (w - pad) / years.length * 0.32, top, (w - pad) / years.length * 0.64, Math.abs(Y(v) - Y(0)), 'F'); });
+    years.forEach((r, i) => { if (i % 5 === 4 || i === 0) { setC(doc, MUTED); doc.text(`Y${r.year}`, X(i), y + ch + 4, { align: 'center' }); } });
+    if (payback != null && payback <= years.length) {
+      const px = x + pad + (w - pad) * payback / years.length; setC(doc, SUN, 'draw'); doc.setLineWidth(0.4); doc.setLineDashPattern([1.2, 1], 0); doc.line(px, y, px, y + ch); doc.setLineDashPattern([], 0);
+      doc.setFont('helvetica', 'bold'); setC(doc, SUN); doc.text(T(`Payback ~ year ${num(payback, 1)}`), Math.min(px + 1.5, x + w - 28), y + 3);
+    }
+  }
+  function kpiTile(doc, x, y, w, h, label, value, sub) {
+    setC(doc, SOFT, 'fill'); doc.roundedRect(x, y, w, h, 1.5, 1.5, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.8); setC(doc, MUTED); doc.text(T(label.toUpperCase()), x + 3, y + 5);
+    doc.setFontSize(14); setC(doc, INK); doc.text(T(value), x + 3, y + 12.5);
+    if (sub) { doc.setFont('helvetica', 'normal'); doc.setFontSize(6.8); setC(doc, MUTED); doc.text(doc.splitTextToSize(T(sub), w - 6).slice(0, 2), x + 3, y + 16.5); }
+  }
+
+  // ---------------------------------------------------------------- engineering plan
+  const SCALES = [20, 25, 50, 75, 100, 125, 150, 200, 250, 300, 400, 500, 750, 1000, 1250, 1500, 2000, 2500, 5000];
+  function plan(doc, data, area, sheet) {
+    const b = bounds(data, 1.5), wM = b.x1 - b.x0, hM = b.y1 - b.y0;
+    const scale = SCALES.find(s => wM * 1000 / s <= area.w - 16 && hM * 1000 / s <= area.h - 16) || SCALES[SCALES.length - 1];
+    const k = 1000 / scale; // mm on paper per metre
+    const ox = area.x + area.w / 2 - (b.x0 + wM / 2) * k, oy = area.y + area.h / 2 + (b.y0 + hM / 2) * k;
+    const P = (x, y) => [ox + x * k, oy - y * k];
+    // frame and fine grid
+    setC(doc, INK, 'draw'); doc.setLineWidth(0.5); doc.rect(area.x, area.y, area.w, area.h);
+    const gridM = [1, 2, 5, 10, 20, 50].find(g => g * k >= 6) || 50;
+    setC(doc, [236, 239, 242], 'draw'); doc.setLineWidth(0.1);
+    for (let gx = Math.ceil((area.x - ox) / k / gridM) * gridM; ox + gx * k < area.x + area.w; gx += gridM) doc.line(ox + gx * k, area.y, ox + gx * k, area.y + area.h);
+    for (let gy = Math.ceil((oy - (area.y + area.h)) / k / gridM) * gridM; oy - gy * k > area.y; gy += gridM) doc.line(area.x, oy - gy * k, area.x + area.w, oy - gy * k);
+    const poly = (pts, style) => { const q = pts.map(p => P(p[0], p[1])); doc.lines(q.slice(1).map((p, i) => [p[0] - q[i][0], p[1] - q[i][1]]), q[0][0], q[0][1], [1, 1], style, true); };
+    // roof areas
+    data.zones.forEach(z => { setC(doc, [140, 150, 160], 'draw'); doc.setLineWidth(0.25); doc.setLineDashPattern([2, 1.2], 0); poly(z.poly, 'S'); doc.setLineDashPattern([], 0); });
+    // obstructions
+    data.objects.forEach(o => {
+      const sh = objectShape(o); setC(doc, [110, 120, 130], 'draw'); doc.setLineWidth(0.25);
+      let lx, ly;
+      if (sh.circle) { const [cx, cy] = P(sh.c[0], sh.c[1]); setC(doc, [232, 242, 232], 'fill'); doc.circle(cx, cy, sh.r * k, 'FD'); doc.line(cx - 1.2, cy, cx + 1.2, cy); doc.line(cx, cy - 1.2, cx, cy + 1.2); lx = cx + sh.r * k + 1; ly = cy; }
+      else { setC(doc, [228, 230, 233], 'fill'); poly(sh.pts, 'FD'); const [cx, cy] = P(o.x, o.y); lx = cx; ly = cy; }
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6.2); setC(doc, MUTED); doc.text(T(`${o.label}, h ${num(o.dims.height, 1)} m`), lx, ly + (sh.circle ? 0.8 : 0.8), { align: sh.circle ? 'left' : 'center' });
+    });
+    // panels
+    panelPolys(data.design).forEach(p => { setC(doc, [219, 228, 240], 'fill'); setC(doc, PANEL, 'draw'); doc.setLineWidth(0.18); poly(p.pts, 'FD'); });
+    // per-array dimensions and labels
+    data.design.groups.forEach((g, gi) => {
+      const az = g.azimuth * D2R, u = [Math.cos(az), -Math.sin(az)], f = [Math.sin(az), Math.cos(az)];
+      const pts = panelPolys(data.design).filter(p => p.group === gi).flatMap(p => p.pts);
+      const ss = pts.map(p => p[0] * u[0] + p[1] * u[1]), ts = pts.map(p => p[0] * f[0] + p[1] * f[1]);
+      const s0 = Math.min(...ss), s1 = Math.max(...ss), t0 = Math.min(...ts), t1 = Math.max(...ts);
+      const at = (s, t) => [s * u[0] + t * f[0], s * u[1] + t * f[1]];
+      const off = 1.6 / k + 0.4;
+      dim(doc, P, at(s0, t1 + off), at(s1, t1 + off), `${num(s1 - s0, 2)} m`, k);
+      dim(doc, P, at(s1 + off, t0), at(s1 + off, t1), `${num(t1 - t0, 2)} m`, k);
+      const [cx, cy] = P(...groupCentroid(data.design, gi));
+      setC(doc, SUN, 'fill'); doc.circle(cx, cy, 2.6, 'F'); doc.setFont('helvetica', 'bold'); doc.setFontSize(7); setC(doc, [26, 19, 5]); doc.text(g.id, cx, cy + 1, { align: 'center' });
+      // facing arrow
+      const [ax, ay] = P(...at((s0 + s1) / 2, t1 + off * 2.4)), [bx, by] = P(...at((s0 + s1) / 2, t1 + off * 2.4 + 2.2 / k));
+      setC(doc, SUN, 'draw'); setC(doc, SUN, 'fill'); doc.setLineWidth(0.35); doc.line(ax, ay, bx, by);
+      const ang = Math.atan2(by - ay, bx - ax), hl = 1.6; doc.triangle(bx, by, bx - hl * Math.cos(ang - 0.45), by - hl * Math.sin(ang - 0.45), bx - hl * Math.cos(ang + 0.45), by - hl * Math.sin(ang + 0.45), 'F');
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(5.8); setC(doc, SUN); doc.text('facing', bx + 1.2, by + 0.6);
+    });
+    // north arrow
+    const nx = area.x + area.w - 10, ny = area.y + 12;
+    setC(doc, INK, 'fill'); doc.triangle(nx, ny - 6, nx + 2.6, ny + 2, nx, ny, 'F'); setC(doc, INK, 'draw'); doc.setLineWidth(0.25); doc.triangle(nx, ny - 6, nx - 2.6, ny + 2, nx, ny, 'S');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); setC(doc, INK); doc.text('N', nx, ny + 6, { align: 'center' });
+    // scale bar
+    const nice = [1, 2, 5, 10, 20, 50, 100, 200].find(v => v * k >= 25) || 200, L = nice * k, sx = area.x + 6, sy = area.y + area.h - 7;
+    for (let i = 0; i < 4; i++) { setC(doc, i % 2 ? [255, 255, 255] : INK, 'fill'); doc.rect(sx + L / 4 * i, sy, L / 4, 1.6, 'F'); }
+    setC(doc, INK, 'draw'); doc.setLineWidth(0.2); doc.rect(sx, sy, L, 1.6);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); setC(doc, INK); doc.text('0', sx, sy - 1.2, { align: 'center' }); doc.text(`${nice} m`, sx + L, sy - 1.2, { align: 'center' });
+    doc.text(`Scale 1:${scale} at A4 · grid ${gridM} m`, sx + L + 6, sy + 1.4);
+    return scale;
+  }
+  function dim(doc, P, a, b, label, k) {
+    const [x1, y1] = P(a[0], a[1]), [x2, y2] = P(b[0], b[1]);
+    setC(doc, [70, 80, 90], 'draw'); doc.setLineWidth(0.15); doc.line(x1, y1, x2, y2);
+    const ang = Math.atan2(y2 - y1, x2 - x1), tk = 1.1, nx = -Math.sin(ang), ny = Math.cos(ang);
+    [[x1, y1], [x2, y2]].forEach(([x, y]) => { doc.line(x - nx * tk + Math.cos(ang) * tk * 0.6, y - ny * tk + Math.sin(ang) * tk * 0.6, x + nx * tk - Math.cos(ang) * tk * 0.6, y + ny * tk - Math.sin(ang) * tk * 0.6); });
+    let deg = -ang * 180 / Math.PI; if (deg > 90) deg -= 180; if (deg < -90) deg += 180;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); setC(doc, [40, 50, 60]);
+    doc.text(T(label), (x1 + x2) / 2 + nx * 1.4, (y1 + y2) / 2 + ny * 1.4, { angle: deg, align: 'center' });
+  }
+  function titleBlock(doc, data, y, scale, sheet, total) {
+    const x = PAGE.m, w = PAGE.w - 2 * PAGE.m, h = 24, cols = [0.34, 0.33, 0.33];
+    setC(doc, INK, 'draw'); doc.setLineWidth(0.4); doc.rect(x, y, w, h); doc.setLineWidth(0.15);
+    const cells = [
+      ['Project', data.title], ['Drawing', 'PV array layout - plan view'], ['Scale', `1:${scale} at A4`],
+      ['Site', `${(data.site.name || '').split(',').slice(0, 3).join(',')} (${data.site.lat.toFixed(5)}, ${data.site.lon.toFixed(5)})`], ['Drawn by', 'ARIEN Twin Studio (automatic)'], ['Date · Sheet', `${fmtDate(data.generatedAt).split(',')[0]} · ${sheet} of ${total} · Rev A`]
+    ];
+    let cx = x; const rowH = h / 2;
+    for (let r = 0; r < 2; r++) { cx = x; for (let c = 0; c < 3; c++) {
+      const cw = w * cols[c], cell = cells[r * 3 + c];
+      doc.rect(cx, y + r * rowH, cw, rowH);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6); setC(doc, MUTED); doc.text(T(cell[0].toUpperCase()), cx + 2, y + r * rowH + 3.6);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); setC(doc, INK); doc.text(doc.splitTextToSize(T(cell[1]), cw - 4).slice(0, 2), cx + 2, y + r * rowH + 7.8);
+      cx += cw;
+    } }
+  }
+
+  // ---------------------------------------------------------------- the document
+  async function build(data, onProgress) {
+    await loadScript(JSPDF_URL);
+    const doc = new root.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
+    doc.setProperties({ title: T(`ARIEN site report - ${data.title}`), subject: 'Solar PV site report', author: 'ARIEN Twin Studio', creator: 'ARIEN Twin Studio' });
+    const K = data.kpis, W = PAGE.w - 2 * PAGE.m, pages = [];
+    const start = (title) => { if (pages.length) doc.addPage(); pages.push(title); return header(doc, title, data); };
+
+    // 1 — summary
+    let y = start('Solar PV site report');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(18); setC(doc, INK); doc.text(T(data.title), PAGE.m, y + 2);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); setC(doc, MUTED);
+    doc.text(T(`${data.site.name} · ${data.site.lat.toFixed(5)}, ${data.site.lon.toFixed(5)}`), PAGE.m, y + 8);
+    y += 14;
+    if (onProgress) onProgress('Fetching satellite imagery…');
+    const imgH = 104, img = await satelliteImage(data, W / imgH, onProgress);
+    if (img) { doc.addImage(img.dataUrl, 'JPEG', PAGE.m, y, W, imgH); setC(doc, LINE, 'draw'); doc.setLineWidth(0.2); doc.rect(PAGE.m, y, W, imgH); }
+    else { setC(doc, SOFT, 'fill'); doc.rect(PAGE.m, y, W, imgH, 'F'); para(doc, 'Satellite imagery could not be loaded; see the plan on the next page.', PAGE.m + 4, y + imgH / 2, W - 8); }
+    y += imgH + 4;
+    doc.setFontSize(7); setC(doc, MUTED); doc.text(T(`Layout on satellite imagery (${img ? img.credit : 'no imagery'}). Arrays labelled as in the plan and specification.`), PAGE.m, y); y += 6;
+    const tw = (W - 2 * 4) / 3, th = 22;
+    const tiles = [
+      ['System capacity', `${num(K.kwp, 2)} kWp`, `${K.panels} panels`],
+      ['Annual production', `${num(K.production)} kWh`, `${num(K.specific)} kWh/kWp, first year`],
+      ['Annual savings', money(K.savings), `${money(K.selfSaving)} bills + ${money(K.exportIncome)} export`],
+      ['Payback', K.payback != null ? `${num(K.payback, 1)} years` : `over ${K.lifetime} years`, `Installed cost ${money(K.capex)}`],
+      ['Lifetime return', `${num(K.roi * 100)}%`, `${money(K.net)} net over ${K.lifetime} years`],
+      ['CO2 reduction', `${num(K.co2)} kg/yr`, 'DESNZ 2026 UK grid factor']
+    ];
+    tiles.forEach((t, i) => kpiTile(doc, PAGE.m + (i % 3) * (tw + 4), y + Math.floor(i / 3) * (th + 4), tw, th, t[0], t[1], t[2]));
+    y += 2 * (th + 4) + 3;
+    const models = (data.models || []).map(m => `${m.maker} ${m.name} ${m.wp} W`).join(', ') || 'custom panels';
+    y = h2(doc, 'Summary', y);
+    para(doc, `${K.panels} panels (${models}) make a ${num(K.kwp, 2)} kWp system. On the last 12 months of weather it would deliver about ${num(K.production)} kWh in its first year after ${data.yieldInfo.systemLosses}% system losses and ${num(data.yieldInfo.shadingLoss * 100, 1)}% shading. About ${num(K.selfUseShare * 100)}% would be used in the home (${num(K.selfUsed)} kWh) and the rest exported (${num(K.exported)} kWh), saving and earning about ${money(K.savings)} a year. Estimated payback is ${K.payback != null ? num(K.payback, 1) + ' years' : 'beyond the system life'}. These are estimates from a physics simulation, not a quote or a guarantee.`, PAGE.m, y, W, 9, INK);
+
+    // 2 — engineering plan
+    y = start('PV array layout');
+    if (onProgress) onProgress('Drawing the plan…');
+    const tbH = 24, schedRows = data.design.groups.length, schedH = 9 + schedRows * 6.5;
+    const area = { x: PAGE.m, y, w: W, h: PAGE.h - 20 - tbH - 6 - schedH - 6 - y };
+    const scale = plan(doc, data, area, 2);
+    let sy = area.y + area.h + 5;
+    sy = table(doc, PAGE.m, sy, data.design.groups.map(g => [g.id, g.label, String(g.panels), g.mount, `${g.tilt}°`, `${g.azimuth}° (${compass(g.azimuth)})`, g.model, num(g.kwp, 2)]),
+      { widths: [10, 34, 13, 30, 13, 22, 50, 10].map((v, i, a) => v * W / a.reduce((s, x) => s + x, 0)), header: ['Array', 'Name', 'Panels', 'Mounting', 'Tilt', 'Facing', 'Panel model', 'kWp'], align: [0, 0, 'right', 0, 'right', 'right', 0, 'right'], size: 7.5, zebra: true });
+    titleBlock(doc, data, PAGE.h - 20 - tbH - 2, scale, 2, 5);
+
+    // 3 — system and yield
+    y = start('System specification and yield');
+    y = h2(doc, 'System specification', y);
+    const specRows = [
+      ['Capacity', `${num(K.kwp, 2)} kWp DC from ${K.panels} panels in ${data.design.groups.length} array${data.design.groups.length === 1 ? '' : 's'}`],
+      ...(data.models || []).map(m => ['Panel', `${m.maker} ${m.name} (${m.code}): ${m.wp} W, ${num(m.eff * 100, 1)}% efficient, ${m.l.toFixed(3)} × ${m.w.toFixed(3)} m, Pmax ${m.gamma} %/°C, ${m.tech}`]),
+      ['Orientation', data.design.groups.map(g => `${g.id}: ${g.tilt}° tilt, ${g.azimuth}° azimuth`).join('; ')],
+      ['Inverter', 'Not designed yet (system losses assumed instead)'],
+      ['Battery', 'None'],
+      ['Energy model', `${data.yieldInfo.model}, hourly physics with cell-level shading`],
+      ['Annual DC yield', `${num(data.yieldInfo.dcTotal)} kWh before system losses; shading loss ${num(data.yieldInfo.shadingLoss * 100, 1)}%`]
+    ];
+    y = table(doc, PAGE.m, y, specRows, { widths: [34, W - 34], size: 8.5, boldFirst: true });
+    y = h2(doc, 'Monthly yield (first year, after system losses)', y + 4);
+    barChart(doc, PAGE.m, y + 4, W, 52, data.monthsLabel, data.monthly, { color: SKY, unit: 'kWh', values: true });
+    y += 62;
+    y = para(doc, `${data.yieldInfo.model} on ERA5 reanalysis weather for ${isoDay(data.yieldInfo.start)} to ${isoDay(data.yieldInfo.end)}. Total ${num(data.monthly.reduce((s, v) => s + v, 0))} kWh.`, PAGE.m, y, W, 8);
+    if (data.forecast) {
+      y = h2(doc, '7-day forecast', y + 4);
+      barChart(doc, PAGE.m, y + 4, W * 0.62, 44, data.forecast.days.map(d => d.label.split(' ').slice(0, 2).join(' ')), data.forecast.days.map(d => d.kwh), { color: SUN, unit: 'kWh per day', values: true });
+      table(doc, PAGE.m + W * 0.66, y + 2, data.forecast.days.map(d => [d.label, `${num(d.kwh, 1)} kWh`]), { widths: [W * 0.2, W * 0.14], align: [0, 'right'], size: 7.5, zebra: true });
+      y += 54;
+      para(doc, `${data.forecast.model} on the Open-Meteo forecast (best-match national models), as of ${fmtDate(data.generatedAt).split(',')[0]}, after system losses. Forecasts change; re-run for the latest.`, PAGE.m, y, W, 8);
+    }
+
+    // 4 — finance
+    y = start('Financial summary');
+    y = h2(doc, 'Financial summary', y);
+    const fin = data.finance;
+    y = table(doc, PAGE.m, y, fin.horizons.map(t => [`${t.years} years`, money(t.savings), money(fin.capex), money(t.costs), money(t.net), `${num(t.roi * 100)}%`, `${num(t.generation)} kWh`, `${num(t.co2 / 1000, 1)} t`]),
+      { widths: [20, 26, 24, 22, 24, 18, 26, 22].map((v, i, a) => v * W / a.reduce((s, x) => s + x, 0)), header: ['Period', 'Savings + income', 'Installed cost', 'Other costs', 'Net position', 'Return', 'Energy', 'CO2 saved'], align: [0, 'right', 'right', 'right', 'right', 'right', 'right', 'right'], size: 8, zebra: true });
+    y = para(doc, `Savings are bills avoided by using your own solar power plus export payments. Net position subtracts the installed cost, inverter replacement and upkeep. Payback: ${fin.payback != null ? 'about year ' + num(fin.payback, 1) : 'not reached within the period'}.`, PAGE.m, y + 1, W, 8);
+    y = h2(doc, 'Running total over the system life', y + 4);
+    cumulativeChart(doc, PAGE.m, y + 4, W, 70, fin.years, fin.payback);
+    y += 82;
+    y = h2(doc, 'Year by year (first 10 years)', y);
+    table(doc, PAGE.m, y, fin.years.slice(0, 10).map(r => [String(r.year), num(r.generation), num(r.selfUsed), num(r.exported), money(r.selfSaving), money(r.exportIncome), money(r.costs), money(r.cumulative)]),
+      { widths: [12, 22, 24, 22, 24, 22, 20, 28].map((v, i, a) => v * W / a.reduce((s, x) => s + x, 0)), header: ['Year', 'kWh', 'Used at home', 'Exported', 'Bill saving', 'Export', 'Costs', 'Running total'], align: [0, 'right', 'right', 'right', 'right', 'right', 'right', 'right'], size: 7.5, zebra: true });
+
+    // 5 — assumptions
+    y = start('Assumptions and sources');
+    y = h2(doc, 'Assumptions', y);
+    y = table(doc, PAGE.m, y, data.assumptions.map(r => [r[0], r[1], (r[3] ? 'Set by user. ' : '') + r[2]]), { widths: [46, 40, W - 86], header: ['Assumption', 'Value', 'Source'], size: 7.5, zebra: true, boldFirst: true });
+    y = h2(doc, 'Method and limits', y + 4);
+    [
+      'Weather: Open-Meteo. The 7-day forecast uses the best-match national models; the annual yield uses ERA5 reanalysis for the last 12 months, hour by hour.',
+      'Physics: the irradiance model above, with a panel thermal model and beam shading per cell from other panels and the obstacles placed. Diffuse light is not shaded and bypass diodes are not modelled.',
+      'Home use: a typical household profile scaled to the annual use above, matched to generation hour by hour. Real use varies; minute-level peaks lower self-use slightly.',
+      'Money: simple cash flows, not discounted. Prices rise at the rate shown; export payments stay flat. VAT on residential solar is 0% in Great Britain until 31 March 2027.',
+      'Carbon: generation times the DESNZ 2026 UK grid factor, held constant; as the grid decarbonises the real saving per kWh falls.',
+      'This report is an estimate for planning, not an installer quote, structural survey or electrical design. Check roof condition, shading and grid connection (G98/G99) with an MCS-certified installer.'
+    ].forEach(t => { setC(doc, SUN, 'fill'); doc.circle(PAGE.m + 1.2, y - 1.1, 0.7, 'F'); y = para(doc, t, PAGE.m + 4, y, W - 4, 8.2, INK) + 0.6; });
+
+    const total = pages.length;
+    for (let i = 1; i <= total; i++) { doc.setPage(i); watermark(doc); footer(doc, data, i, total); }
+    return doc;
+  }
+  const compass = (az) => ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(((az % 360) + 360) % 360 / 45) % 8];
+
+  async function download(data, onProgress) {
+    if (!data.logo) { const im = document.querySelector('#rail .brand img'); if (im) data.logo = im.src; }
+    const doc = await build(data, onProgress);
+    const name = `ARIEN-site-report-${String(data.title).replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase().slice(0, 60) || 'site'}.pdf`;
+    if (onProgress) onProgress('Saving…');
+    doc.save(name);
+    root.__arienLastReport = { name, pages: doc.getNumberOfPages(), size: doc.output('arraybuffer').byteLength };
+    return name;
+  }
+  root.ArienReport = { download, build, satelliteImage, _T: T };
 })(typeof window !== 'undefined' ? window : globalThis);
 </script>
 <script>/* ARIEN Twin Studio — browser digital twin (CesiumJS world, Open-Meteo weather, thesis physics). */
@@ -2932,7 +3990,8 @@ body.view-design #toasts { bottom: 24px; }
     visuals: 'high', shadowsOn: true, colourMode: 'real',
     sim: { lastT: null, T: {}, energyWh: 0, lastW: null, lastRes: null, playing: false },
     shade: { dirty: true, lastSun: null, trans: [], useTiles: false, profiles: {}, step: 10, scope: 'array' },
-    run: null, placing: null, zones: [], designName: '', view: 'twin', forecastRes: null, yieldRes: null, yearWx: null
+    run: null, placing: null, zones: [], designName: '', view: 'twin', forecastRes: null, yieldRes: null, yearWx: null,
+    finance: {}
   };
   const geoms = new Map();      // array id -> PH geometry
   let viewer = null, scene = null, siteM = null, siteMinv = null, tileset = null, handler = null, cloudStage = null;
@@ -2982,7 +4041,7 @@ body.view-design #toasts { bottom: 24px; }
   const saveSoon = () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveScene, 600); };
   function sceneSnapshot() {
     return { v: 1, site: { name: state.site.name, lat: state.site.lat, lon: state.site.lon }, worldSrc: state.world.src,
-      arrays: state.arrays, objects: state.objects, zones: state.zones, designName: state.designName, live: state.live, compare: state.compare, params: state.params, thermalCa: state.thermalCa,
+      arrays: state.arrays, objects: state.objects, zones: state.zones, designName: state.designName, finance: state.finance, live: state.live, compare: state.compare, params: state.params, thermalCa: state.thermalCa,
       visuals: state.visuals, shadowsOn: state.shadowsOn, colourMode: state.colourMode };
   }
   function applySnapshot(s) {
@@ -2993,6 +4052,7 @@ body.view-design #toasts { bottom: 24px; }
     state.objects = (s.objects || []).filter(o => PH.OBJECT_TYPES[o.type]);
     state.zones = Array.isArray(s.zones) ? s.zones.filter(z => z && Array.isArray(z.poly)) : [];
     state.designName = s.designName || '';
+    state.finance = s.finance && typeof s.finance === 'object' ? s.finance : {};
     if (s.live && LIVE_KEYS.includes(s.live)) state.live = s.live;
     if (s.compare) state.compare = { ...state.compare, ...s.compare };
     if (s.params) state.params = { ...clone(PH.DEFAULT_PARAMS), ...s.params };
@@ -3151,6 +4211,23 @@ body.view-design #toasts { bottom: 24px; }
     viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(c, 20), {
       offset: new Cesium.HeadingPitchRange(topDown ? 0 : -0.35, topDown ? -Cesium.Math.PI_OVER_TWO + 0.02 : -0.55, range), duration
     });
+    return sleep(duration * 1000 + 200);
+  }
+  /** Frame the designed arrays and obstacles, looking at the panel faces from in front */
+  function designBounds() {
+    const pts = [];
+    state.arrays.forEach(a => { const g = geoms.get(a.id) || geomFor(a); g.panels.forEach(p => pts.push(p.c)); });
+    state.objects.forEach(o => pts.push([o.x, o.y, o.z + o.dims.height / 2]));
+    if (!pts.length) return null;
+    const lo = [0, 1, 2].map(k => Math.min(...pts.map(p => p[k]))), hi = [0, 1, 2].map(k => Math.max(...pts.map(p => p[k])));
+    const c = lo.map((v, k) => (v + hi[k]) / 2), r = Math.max(8, Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) / 2 + 3);
+    return { c, r };
+  }
+  function flyToDesign(duration = 1.6) {
+    const b = designBounds(); if (!b || !viewer) return flyToSite(duration);
+    const az = state.arrays.length ? Math.atan2(state.arrays.reduce((t, a) => t + Math.sin(a.azimuth * D2R), 0), state.arrays.reduce((t, a) => t + Math.cos(a.azimuth * D2R), 0)) : Math.PI;
+    viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(enu2ecef(b.c[0], b.c[1], b.c[2]), b.r), {
+      offset: new Cesium.HeadingPitchRange(az + Math.PI, -0.85, Math.max(34, b.r * 3)), duration }); // from in front and above, so trees in front do not hide the panels
     return sleep(duration * 1000 + 200);
   }
   async function waitTiles(timeout = 10000) {
@@ -4495,7 +5572,7 @@ void main() {
     state.arrays.forEach(a => { a.worldSrc = a.worldSrc || 'none'; }); state.objects.forEach(o => { o.worldSrc = o.worldSrc || 'none'; });
     setSiteFrame(); geoms.clear(); state.shade.profiles = {}; state.shade.useTiles = false; $('#sh-tiles').checked = false;
     state.forecastRes = null; state.yieldRes = null; state.yearWx = null;
-    buildModelPane2(); rebuildAll(); if (state.view === 'twin') await flyToSite(1.2);
+    buildModelPane2(); rebuildAll(); if (state.view === 'twin') await (state.arrays.length ? flyToDesign(1.2) : flyToSite(1.2));
     const stale = [...state.arrays, ...state.objects].filter(i => i.worldSrc !== state.world.src); if (stale.length && state.view === 'twin') { await waitTiles(8000); await dropItems(stale); }
     $('#site-lat').value = state.site.lat.toFixed(6); $('#site-lon').value = state.site.lon.toFixed(6);
     renderSiteFacts(); renderSavedSites(); designChanged(true); saveScene();
@@ -4504,13 +5581,19 @@ void main() {
   }
   async function openNamedSite(id) {
     const x = listSites().find(e => e.id === id); if (!x) return;
-    try { await openSnapshot(x.snap, `“${x.name}”`); state.designName = x.name; state.designAuto = !!x.auto; renderSavedSites(); }
+    try {
+      await openSnapshot(x.snap, `“${x.name}”`); state.designName = x.name; state.designAuto = !!x.auto; renderSavedSites();
+      if (state.view === 'design' && window.ArienPlanner) ArienPlanner.focusDesign();
+    }
     catch (e) { toast('Could not open that site: ' + e.message, 'err'); }
   }
   function deleteNamedSite(id) { try { PL.removeSite(localStorage, id); } catch (e) { /* ignore */ } renderSavedSites(); }
 
   // ------------------------------------------------------------------ forecast and yield estimates
   const totalKwp = () => state.arrays.reduce((t, a) => t + PN.arrayKwp(a), 0);
+  /** DC physics → delivered AC energy: system losses (and first-year ageing for annual figures), from the dashboard assumptions */
+  const finAssume = () => ({ ...(window.ArienFinance ? ArienFinance.DEFAULTS : { systemLosses: 14, firstYearDegradation: 1 }), ...state.finance });
+  const acFactor = (year = true) => { const a = finAssume(); return (1 - a.systemLosses / 100) * (year ? 1 - a.firstYearDegradation / 100 : 1); };
   /** Next 7 days with the live model: daily kWh from the forecast run */
   async function forecastWeek() {
     if (!state.arrays.length) { toast('Place panels first.', 'warn'); return null; }
@@ -4527,7 +5610,9 @@ void main() {
     });
     const list = [...days].map(([t, kwh]) => ({ t, kwh })).filter(d => d.t < today + 7 * 86400000);
     const s = state.wx.series;
-    const res = { kind: 'forecast', model: k, days: list, total: list.reduce((a, b) => a + b.kwh, 0), kwp: totalKwp(), source: s.source, cached: !!s.fromCache, at: Date.now() };
+    const keep = run.times.map((t, i) => i).filter(i => run.times[i] >= today && run.times[i] < today + 7 * 86400000);
+    const res = { kind: 'forecast', model: k, days: list, total: list.reduce((a, b) => a + b.kwh, 0), kwp: totalKwp(), source: s.source, cached: !!s.fromCache, at: Date.now(),
+      series: { times: keep.map(i => run.times[i]), kw: keep.map(i => run.kw[k][i]), cloud: keep.map(i => run.cloud[i]) } };
     state.forecastRes = res; renderResults();
     return res;
   }
@@ -4574,7 +5659,7 @@ void main() {
     const cache = new Map(), nP = gs.reduce((t, g) => t + g.panels.length, 0);
     const binAz = opt.binAz || (nP > 150 ? 3 : 1.5), binAlt = opt.binAlt || (nP > 150 ? 1.5 : 0.75); // degrees: shading is reused within a bin
     const off = s.utcOffset * 1000; let lastYield = performance.now(), prevDay = false;
-    const unshadedTrans = [];
+    const unshadedTrans = [], hourly = new Float64Array(s.time.length); // live model, kWh in each hour (DC)
     for (let i = 0; i < s.time.length; i++) {
       const t = s.time[i] - 1800000; // radiation is the mean of the hour ending at time[i]
       const w = WX.sample(s, t, state.site.lat, state.site.lon);
@@ -4588,6 +5673,7 @@ void main() {
         const r1 = computePower(k, w, sunVec, trans, TsS[k], prevDay ? 3600 : null, arrs, gs);
         const r0 = computePower(k, w, sunVec, unshadedTrans, TsU[k], prevDay ? 3600 : null, arrs, gs);
         month[k][m] += r1.kw; total[k] += r1.kw; unshaded[k] += r0.kw;
+        if (k === keys[0]) hourly[i] = r1.kw;
       }
       prevDay = true;
       if (performance.now() - lastYield > 100) { if (onProgress) onProgress(i / s.time.length); if (!quiet) setResultsBusy(`Estimating yield: ${Math.round(i / s.time.length * 100)}%`); await breathe(); lastYield = performance.now(); }
@@ -4597,7 +5683,8 @@ void main() {
     const scale = days > 300 ? 365 / days : 1; // normalise to a full year
     return { kind: 'yield', model: k, months: month[k].map(v => v * scale), total: total[k] * scale, kwp, specific: kwp ? total[k] * scale / kwp : 0,
       shadingLoss: unshaded[k] > 0 ? 1 - total[k] / unshaded[k] : 0, perModel: Object.fromEntries(keys.map(x => [x, total[x] * scale])),
-      start: s.start, end: s.end, source: s.source, cached: !!s.fromCache, tiles: !!hz, at: Date.now() };
+      start: s.start, end: s.end, source: s.source, cached: !!s.fromCache, tiles: !!hz, at: Date.now(),
+      hourly: { times: s.time.slice(), kwh: Array.from(hourly), scale, utcOffset: s.utcOffset * 1000 } };
   }
   /** Annual beam-shading loss under clear skies (Kasten, N = 0) on the 21st of each month: quick, for the planner */
   function quickShadingLoss() {
@@ -4631,33 +5718,22 @@ void main() {
     if (window.ArienPlanner && state.view === 'design') ArienPlanner.redraw();
     renderSavedSites();
   }
-  // result cards (shared by the dashboard and the planner)
-  function barsSvg(vals, labels, color) {
-    const W = 300, H = 92, pad = 16, n = vals.length, max = Math.max(...vals, 0.001), bw = (W - 4) / n;
-    let bars = '';
-    vals.forEach((v, i) => {
-      const h = (H - pad - 12) * v / max, x = 2 + i * bw;
-      bars += `<rect x="${(x + bw * 0.14).toFixed(1)}" y="${(H - pad - h).toFixed(1)}" width="${(bw * 0.72).toFixed(1)}" height="${Math.max(0.5, h).toFixed(1)}" rx="2" fill="${color}"><title>${labels[i]}: ${v.toFixed(1)} kWh</title></rect>`
-        + `<text x="${(x + bw / 2).toFixed(1)}" y="${H - 3}" text-anchor="middle">${labels[i]}</text>`;
-      if (n <= 8) bars += `<text x="${(x + bw / 2).toFixed(1)}" y="${(H - pad - h - 3).toFixed(1)}" text-anchor="middle" class="v">${v >= 100 ? v.toFixed(0) : v.toFixed(1)}</text>`;
-    });
-    return `<svg class="bars" viewBox="0 0 ${W} ${H}" role="img" aria-label="kWh per ${n === 12 ? 'month' : 'day'}">${bars}</svg>`;
-  }
+  // result cards (shared by the Analysis panel and the planner)
   function resultsHtml() {
     let html = '';
     const f = state.forecastRes, y = state.yieldRes;
     if (f) {
       html += `<div class="result-card${f.stale ? ' stale' : ''}"><div class="rc-head"><span class="eyebrow">Forecast · next 7 days</span>${f.stale ? '<span class="badge warn">design changed</span>' : ''}</div>
-        <div class="rc-big"><b>${f.total.toFixed(1)}</b> kWh <small>${(f.total / Math.max(1, f.days.length)).toFixed(1)} kWh a day · ${f.kwp.toFixed(2)} kWp</small></div>
-        ${barsSvg(f.days.map(d => d.kwh), f.days.map(d => DAYS[new Date(d.t + utcOffset()).getUTCDay()]), cssVar('--sun') || '#f3b23c')}
+        <div class="rc-big"><b>${(f.total * acFactor(false)).toFixed(1)}</b> kWh <small>${(f.total * acFactor(false) / Math.max(1, f.days.length)).toFixed(1)} kWh a day · ${f.kwp.toFixed(2)} kWp · after ${finAssume().systemLosses}% system losses</small></div>
+        <div class="rc-chart"><canvas data-chart="forecast" aria-label="kWh per day, next 7 days"></canvas></div>
         <p class="hint">${escapeHtml(modelLabel(f.model))} · ${escapeHtml(f.source)}${f.cached ? ' (site cache)' : ''}.</p></div>`;
     }
     if (y) {
-      const per = Object.entries(y.perModel).filter(([k]) => k !== y.model).map(([k, v]) => `${modelShort(k)} ${Math.round(v).toLocaleString()}`).join(' · ');
+      const per = Object.entries(y.perModel).filter(([k]) => k !== y.model).map(([k, v]) => `${modelShort(k)} ${Math.round(v * acFactor()).toLocaleString()}`).join(' · ');
       html += `<div class="result-card${y.stale ? ' stale' : ''}"><div class="rc-head"><span class="eyebrow">Estimated yield · a year</span>${y.stale ? '<span class="badge warn">design changed</span>' : ''}</div>
-        <div class="rc-big"><b>${Math.round(y.total).toLocaleString()}</b> kWh <small>${Math.round(y.specific).toLocaleString()} kWh/kWp · shading loss ${(y.shadingLoss * 100).toFixed(1)}%</small></div>
-        ${barsSvg(y.months, MONTHS.map(m => m[0]), cssVar('--sky') || '#6cc3e8')}
-        <p class="hint">${escapeHtml(modelLabel(y.model))} on ${escapeHtml(y.source)}, ${fmtDay(y.start)} ${new Date(y.start).getUTCFullYear()} – ${fmtDay(y.end)} ${new Date(y.end).getUTCFullYear()}${y.cached ? ' (site cache)' : ''}, hourly.${per ? ' Other models: ' + escapeHtml(per) + ' kWh.' : ''}${y.tiles ? ' Includes the 3D-tile skyline.' : ' Shading from placed obstacles and panel rows; trace the skyline in the 3D twin to add buildings from the tiles.'} No inverter, cable or soiling losses.</p></div>`;
+        <div class="rc-big"><b>${Math.round(y.total * acFactor()).toLocaleString()}</b> kWh <small>${Math.round(y.specific * acFactor()).toLocaleString()} kWh/kWp · shading loss ${(y.shadingLoss * 100).toFixed(1)}% · first year, after ${finAssume().systemLosses}% system losses</small></div>
+        <div class="rc-chart"><canvas data-chart="yield" aria-label="kWh per month"></canvas></div>
+        <p class="hint">${escapeHtml(modelLabel(y.model))} on ${escapeHtml(y.source)}, ${fmtDay(y.start)} ${new Date(y.start).getUTCFullYear()} – ${fmtDay(y.end)} ${new Date(y.end).getUTCFullYear()}${y.cached ? ' (site cache)' : ''}, hourly.${per ? ' Other models: ' + escapeHtml(per) + ' kWh.' : ''}${y.tiles ? ' Includes the 3D-tile skyline.' : ' Shading from placed obstacles and panel rows; trace the skyline in the 3D twin to add buildings from the tiles.'} Losses and prices are set in Dashboard → Assumptions.</p></div>`;
     }
     return html;
   }
@@ -4665,7 +5741,19 @@ void main() {
   function setResultsBusy(msg) { busyMsg = msg; renderResults(); }
   function renderResults() {
     const html = (busyMsg ? `<div class="result-card busy"><span class="spinner"></span>${escapeHtml(busyMsg)}</div>` : '') + resultsHtml();
-    $$('.results-slot').forEach(el => { el.innerHTML = html; el.hidden = !html; });
+    $$('.results-slot').forEach(el => {
+      if (el.dataset.html === html) return; // unchanged: keep the charts
+      el.dataset.html = html; el.innerHTML = html; el.hidden = !html;
+      drawResultCharts(el);
+    });
+    if (window.ArienDashboard) ArienDashboard.refresh();
+  }
+  function drawResultCharts(el) {
+    if (!window.ArienCharts) return;
+    const f = state.forecastRes, y = state.yieldRes, C = ArienCharts;
+    $$('canvas[data-chart="forecast"]', el).forEach(cv => f && C.bars(cv, { labels: f.days.map(d => DAYS[new Date(d.t + utcOffset()).getUTCDay()]), values: f.days.map(d => d.kwh * acFactor(false)), color: cssVar('--sun'), unit: 'kWh', decimals: 1, yTitle: 'kWh', valueLabels: true }));
+    $$('canvas[data-chart="yield"]', el).forEach(cv => y && C.bars(cv, { labels: MONTHS.map(m => m[0]), values: y.months.map(v => v * acFactor()), color: cssVar('--sky'), unit: 'kWh', decimals: 0, yTitle: 'kWh',
+      tooltipTitle: (it) => it.length ? MONTHS[it[0].dataIndex] : '' }));
   }
   async function runForecastUi() { setResultsBusy('Forecasting the next 7 days…'); try { const r = await forecastWeek(); return r; } finally { setResultsBusy(''); } }
   async function runYieldUi() { const r = await estimateYield(); setResultsBusy(''); return r; }
@@ -4674,21 +5762,69 @@ void main() {
   function setView(v) {
     if (v === state.view) return;
     state.view = v;
+    const flat = v === 'design' || v === 'dashboard';
     document.body.classList.toggle('view-design', v === 'design');
+    document.body.classList.toggle('view-dashboard', v === 'dashboard');
+    document.body.classList.toggle('view-flat', flat);
     $('#planner').hidden = v !== 'design';
+    $('#dashboard').hidden = v !== 'dashboard';
     $$('#rail button[data-view]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.view === v)));
-    if (v === 'design') {
+    if (flat) {
       closeDrawer(); toggleDash(false); stopPlacing();
       if (viewer) viewer.useDefaultRenderLoop = false; // the globe is hidden: save the GPU
-      if (window.ArienPlanner) ArienPlanner.show();
-      if (state.quickLoss == null) updateQuickLoss(0);
-      if (location.hash !== '#design') history.replaceState(null, '', '#design');
+      if (v === 'design') { if (window.ArienPlanner) ArienPlanner.show(); if (state.quickLoss == null) updateQuickLoss(0); }
+      if (v === 'dashboard' && window.ArienDashboard) ArienDashboard.show();
+      if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v);
     } else {
       if (viewer) { viewer.useDefaultRenderLoop = true; viewer.resize(); }
       if (state.site.groundPending && viewer) state.siteSettle = settleSite();
-      if (location.hash === '#design') history.replaceState(null, '', location.pathname + location.search);
+      if (location.hash === '#design' || location.hash === '#dashboard') history.replaceState(null, '', location.pathname + location.search);
     }
   }
+  /** Make sure the dashboard has a forecast and a year of yield for the current design */
+  async function ensureResults(onStep) {
+    if (!state.arrays.length) return false;
+    if (!state.forecastRes || state.forecastRes.stale) { if (onStep) onStep('forecast'); await runForecastUi(); }
+    if (!state.yieldRes || state.yieldRes.stale) { if (onStep) onStep('yield'); await runYieldUi(); }
+    return !!(state.forecastRes && state.yieldRes);
+  }
+  /** Everything the dashboard and report need, from the current design and results */
+  function designSummary() {
+    const groups = new Map();
+    state.arrays.forEach(a => {
+      const key = a.zone || a.id; const z = a.zone ? state.zones.find(q => q.id === a.zone) : null;
+      if (!groups.has(key)) groups.set(key, { label: z ? z.name : a.name, arrays: [] });
+      groups.get(key).arrays.push(a);
+    });
+    const list = [...groups.values()].map((g, i) => {
+      const a0 = g.arrays[0], n = g.arrays.reduce((t, a) => t + a.rows * a.cols, 0), pm = PN.byId(a0.panelModel);
+      return { id: 'A' + (i + 1), label: g.label, panels: n, rows: a0.zone ? new Set(g.arrays.map(a => a.zoneRow ?? a.planeRow ?? a.id)).size : a0.rows,
+        tilt: a0.tilt, azimuth: a0.azimuth, model: pm ? PN.label(pm) : 'Custom panel', modelId: a0.panelModel, kwp: g.arrays.reduce((t, a) => t + PN.arrayKwp(a), 0),
+        landscape: !!a0.landscape, mount: a0.planeRow != null ? 'Flush on roof' : (a0.zone ? 'Racked rows' : `${a0.rows} × ${a0.cols} array`),
+        geoms: g.arrays.map(a => PH.buildArrayGeometry({ ...a, cellsX: 1, cellsY: 1 })) };
+    });
+    return { groups: list, panels: list.reduce((t, g) => t + g.panels, 0), kwp: totalKwp(),
+      models: [...new Set(state.arrays.map(a => a.panelModel))].map(id => PN.byId(id)).filter(Boolean) };
+  }
+  function dashboardApi() {
+    return {
+      state, PN, PL, PH, WX, toast, escapeHtml, fmtDay, fmtTime, utcOffset, modelLabel, modelShort, MONTHS, DAYS, cssVar,
+      ensureResults, designSummary, listSites, deleteSite: deleteNamedSite, setView, totalKwp, saveSoon,
+      openSite: async (id, view) => {
+        const v = view || 'design'; setView(v); await openNamedSite(id);
+        if (v === 'twin') flyToDesign(1.2);
+      },
+      newDesign: () => setView('design'),
+      siteLabel: () => state.designName || suggestedName(),
+      weatherSources: () => {
+        const f = state.forecastRes, y = state.yieldRes;
+        return [f ? `forecast: Open-Meteo.com, ${f.source}${f.cached ? ' (site cache)' : ''}` : null,
+          y ? `annual yield: ERA5 reanalysis (Copernicus Climate Change Service) via Open-Meteo.com, ${isoDate(y.start)} to ${isoDate(y.end)}` : null].filter(Boolean);
+      }
+    };
+  }
+
+
   /** After the site moved in the planner: fly there and read the ground height */
   async function settleSite() {
     await flyToSite(1.4);
@@ -4699,7 +5835,7 @@ void main() {
   async function simulateDesign() {
     setView('twin');
     const fresh = [...state.arrays, ...state.objects].filter(i => i.fromPlanner);
-    if (state.siteSettle) await state.siteSettle; else await flyToSite(1.4);
+    if (state.siteSettle) await state.siteSettle; else await flyToDesign(1.2);
     if (state.world.src !== 'none' && fresh.length) {
       // panels and chimneys sit on whatever is under them (roofs); trees, hedges, walls and buildings stand on the ground,
       // since photorealistic tiles include the real tree canopies a drop would land on
@@ -4708,8 +5844,11 @@ void main() {
       await waitTiles(9000); await dropItems(onSurface);
     } else if (fresh.length) { rebuildAll(); } // map only: keep the planner heights (flush rows climb the roof plane)
     fresh.forEach(i => { delete i.fromPlanner; });
+    geoms.clear(); await flyToDesign(1.4); // the drop may have lifted the panels onto roofs
     if (!state.wx.series) await loadWeather(true); else { simulateNow(true); await runPeriod(true); }
     if (state.run) toggleDash(true);
+    // have the dashboard ready: a year of yield in the background
+    if (!state.yieldRes || state.yieldRes.stale) estimateYield().then((r) => { setResultsBusy(''); if (r) toast('Dashboard ready: savings, payback, forecast and the PDF report are under Dashboard in the left rail.', 'ok', 7000); });
   }
   function plannerApi() {
     return {
@@ -4721,6 +5860,7 @@ void main() {
         Object.assign(a, { tilt: spec.tilt, azimuth: spec.azimuth, rows: spec.rows || 1, cols: spec.cols || 1, rowPitch: spec.rowPitch || a.rowPitch,
           colGap: spec.colGap ?? a.colGap, mountHeight: spec.mountHeight ?? a.mountHeight, zone: spec.zone || null, fromPlanner: true, worldSrc: 'none' });
         if (spec.planeRow != null) a.planeRow = spec.planeRow;
+        if (spec.zoneRow != null) a.zoneRow = spec.zoneRow;
         if (spec.name) a.name = spec.name;
         state.arrays.push(a); if (scene) buildArrayPrimitive(a);
         return a;
@@ -4738,7 +5878,7 @@ void main() {
       goToSite, searchPlaces, suggestedName, saveSite: saveNamedSite, listSites, openSite: openNamedSite, deleteSite: deleteNamedSite,
       forecast: runForecastUi, estimateYield: runYieldUi, simulate: simulateDesign, openTwin: () => setView('twin'), totalKwp,
       specificYield: specificYieldFor,
-      quickLoss: () => state.quickLoss, renderSavedSites, renderResults
+      quickLoss: () => state.quickLoss, renderSavedSites, renderResults, acFactor
     };
   }
 
@@ -4773,7 +5913,7 @@ void main() {
   function wire() {
     $('#rail').addEventListener('click', (e) => {
       const v = e.target.closest('button[data-view]');
-      if (v) { setView(state.view === 'design' ? 'twin' : 'design'); return; }
+      if (v) { setView(state.view === v.dataset.view ? 'twin' : v.dataset.view); return; }
       const b = e.target.closest('button[data-panel]'); if (!b) return;
       if (state.view === 'design') setView('twin');
       if (state.openPane === b.dataset.panel && !$('#drawer').hidden) closeDrawer(); else openDrawer(b.dataset.panel);
@@ -5153,10 +6293,11 @@ void main() {
     $('#site-lat').value = state.site.lat.toFixed(6); $('#site-lon').value = state.site.lon.toFixed(6);
     wire(); initSetup(); initAdmin(); buildModelPane2(); renderSiteFacts(); updateSiteSearchAvailability();
     if (window.ArienPlanner) ArienPlanner.init(plannerApi());
+    if (window.ArienDashboard) ArienDashboard.init(dashboardApi());
     renderSavedSites(); renderResults();
-    if (location.hash === '#design') { const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); setView('design'); } }, 300); }
+    if (location.hash === '#design' || location.hash === '#dashboard') { const v = location.hash.slice(1); const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); setView(v); } }, 300); }
     if (location.hash === '#admin') { const go = () => openDrawer('admin'); const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); go(); } }, 400); }
-    window.__arien = { state, viewer: () => viewer, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef, setView, forecastWeek, estimateYield,
+    window.__arien = { state, viewer: () => viewer, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef, setView, forecastWeek, estimateYield, designSummary, flyToDesign, designBounds,
       quickShadingLoss, saveNamedSite, listSites, openNamedSite, searchPlaces, suggestedName,
       dropAll: () => dropItems([...state.arrays]),
       yieldDebug: async (o) => runYield(await yearWeather(), null, { quiet: true, ...o, arrays: o.full ? state.arrays.map(a => ({ ...a })) : coarseArrays() }),

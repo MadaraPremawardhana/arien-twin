@@ -75,6 +75,7 @@
     <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L5 13h6l-1 9 8-11h-6z"/></symbol>
     <symbol id="i-bars" viewBox="0 0 24 24"><path d="M4 20h16M7 17v-5M12 17V7M17 17v-8"/></symbol>
     <symbol id="i-save" viewBox="0 0 24 24"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></symbol>
+    <symbol id="i-dash" viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="10" rx="1.5"/><rect x="13" y="3" width="8" height="6" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/></symbol>
     <symbol id="i-drop" viewBox="0 0 24 24"><path d="M12 3v13M7 11l5 5 5-5M5 21h14"/></symbol>
   </defs>
 </svg>
@@ -93,6 +94,7 @@
     <button data-panel="models" title="Irradiance models (5)"><svg><use href="#i-models"/></svg><span>Models</span></button>
     <button data-panel="shading" title="Shading (6)"><svg><use href="#i-shade"/></svg><span>Shading</span></button>
     <button data-panel="meta" title="Meta-learning (7)"><svg><use href="#i-meta"/></svg><span>Meta</span></button>
+    <button data-view="dashboard" title="Dashboard: savings, forecast, report" aria-pressed="false"><svg><use href="#i-dash"/></svg><span>Dashboard</span></button>
     <span class="rail-gap"></span>
     <button data-panel="world" title="3D world and keys (8)"><svg><use href="#i-world"/></svg><span>World</span></button>
   </nav>
@@ -399,7 +401,7 @@
     <div class="hud-wx" id="hud-wx">—</div>
     <div class="hud-btns">
       <button class="chip" id="btn-visuals" aria-pressed="true" title="Weather visuals (V)"><svg><use href="#i-eye"/></svg>Visuals</button>
-      <button class="chip" id="btn-dash" aria-pressed="false" title="Dashboard (D)"><svg><use href="#i-chart"/></svg>Dashboard</button>
+      <button class="chip" id="btn-dash" aria-pressed="false" title="Analysis: model comparison over the period (D)"><svg><use href="#i-chart"/></svg>Analysis</button>
     </div>
     <div class="hud-btns">
       <button class="chip" id="btn-forecast" title="Energy over the next 7 days"><svg><use href="#i-bolt"/></svg>Forecast</button>
@@ -407,8 +409,8 @@
     </div>
   </div>
 
-  <aside id="dash" hidden aria-label="Dashboard">
-    <header class="drawer-head"><h2>Dashboard</h2><button class="icon-btn" id="dash-close" title="Close (D)"><svg><use href="#i-close"/></svg></button></header>
+  <aside id="dash" hidden aria-label="Analysis">
+    <header class="drawer-head"><h2>Analysis</h2><button class="icon-btn" id="dash-close" title="Close (D)"><svg><use href="#i-close"/></svg></button></header>
     <div class="drawer-body">
       <div class="results-slot" hidden></div>
       <div class="reco" id="reco">Run the period to get a recommendation.</div>
@@ -511,6 +513,18 @@
     </aside>
   </section>
 
+  <section id="dashboard" hidden aria-label="Dashboard">
+    <header class="db-head">
+      <div class="db-title"><span class="eyebrow">Dashboard</span><h2 id="db-site">Your solar site</h2><p class="hint" id="db-sub"></p></div>
+      <div class="db-actions">
+        <button class="btn" data-goto="design"><svg><use href="#i-design"/></svg>Edit design</button>
+        <button class="btn" data-goto="twin"><svg><use href="#i-panels"/></svg>View in 3D</button>
+      </div>
+    </header>
+    <div class="db-scroll"><div class="db-grid" id="db-body"></div>
+      <footer class="db-foot" id="db-foot"></footer></div>
+  </section>
+
   <div id="modebar" hidden><span id="modebar-text"></span> <kbd>Esc</kbd> to cancel</div>
   <div id="toasts" aria-live="polite"></div>
   <div id="boot">
@@ -573,6 +587,10 @@
 <script>/*@@PANELS@@*/</script>
 <script>/*@@PLACES@@*/</script>
 <script>/*@@PLANNER@@*/</script>
+<script>/*@@CHARTS@@*/</script>
+<script>/*@@FINANCE@@*/</script>
+<script>/*@@DASHBOARD@@*/</script>
+<script>/*@@REPORT@@*/</script>
 <script>/*@@APP@@*/</script>
 </body>
 </html>

@@ -98,7 +98,7 @@
     // flush rows lie on one roof plane: each row back from the front sits higher by pitch × tan(tilt),
     // so rows do not shade each other (racked rows on a flat roof all start at the same height)
     const rise = z.mount === 'flush' ? pitch * Math.tan(z.tilt * D2R) : 0;
-    runs.forEach((rn, i) => api.newArray({ x: rn.x, y: rn.y, z: rn.row * rise, planeRow: z.mount === 'flush' ? rn.row : null, tilt: z.tilt, azimuth: z.azimuth, rows: 1, cols: rn.cols, rowPitch: pitchFor(z, L), colGap: z.colGap,
+    runs.forEach((rn, i) => api.newArray({ x: rn.x, y: rn.y, z: rn.row * rise, planeRow: z.mount === 'flush' ? rn.row : null, zoneRow: rn.row, tilt: z.tilt, azimuth: z.azimuth, rows: 1, cols: rn.cols, rowPitch: pitchFor(z, L), colGap: z.colGap,
       mountHeight: z.mountHeight, panelModel: z.panelModel, landscape: z.landscape, zone: z.id, name: `${z.name} · row ${rn.row + 1}${runs.filter(x => x.row === rn.row).length > 1 ? String.fromCharCode(97 + runs.filter((x, j) => x.row === rn.row && j < i).length) : ''}` }));
     return runs.reduce((t, r) => t + r.cols, 0);
   }
@@ -313,8 +313,8 @@
     const kwp = n * p.wp / 1000;
     out.innerHTML = `<div class="result-card"><span class="eyebrow">Roof area ${Math.round(area)} m²</span><div class="rc-big"><b>${n}</b> panels <small>${kwp.toFixed(2)} kWp of ${api.escapeHtml(PN.short(p))}</small></div><p class="hint" id="pl-an-y">Working out a year of output at ${set.tilt}° facing ${api.compass(set.azimuth)}…</p></div>`;
     try {
-      const sy = await api.specificYield(set);
-      $('#pl-an-y').innerHTML = sy ? `About <b>${Math.round(sy * kwp).toLocaleString()} kWh a year</b> (${Math.round(sy)} kWh/kWp from the last 12 months of weather here, unshaded). Rough sizing: edges, vents and roof shape reduce the count.` : 'Weather for a yield estimate is not available right now.';
+      const sy = (await api.specificYield(set)) * api.acFactor();
+      $('#pl-an-y').innerHTML = sy ? `About <b>${Math.round(sy * kwp).toLocaleString()} kWh a year</b> (${Math.round(sy)} kWh/kWp from the last 12 months of weather here, unshaded, after system losses). Rough sizing: edges, vents and roof shape reduce the count.` : 'Weather for a yield estimate is not available right now.';
     } catch (e) { $('#pl-an-y').textContent = 'Yield needs weather: ' + (e.message || e); }
   }
 
@@ -432,6 +432,17 @@
   }
 
   // ---------------------------------------------------------------- map setup
+  /** Fit the map to the design (panels, roof areas, obstructions), or centre on the site when empty */
+  function focusDesign(animate = true) {
+    if (!map) return;
+    const pts = [];
+    S.arrays.forEach(a => PH.buildArrayGeometry({ ...a, cellsX: 1, cellsY: 1 }).panels.forEach(p => pts.push(p.c)));
+    S.zones.forEach(z => z.poly.forEach(p => pts.push(p)));
+    S.objects.forEach(o => { const r = Math.max(o.dims.length, o.dims.width ?? o.dims.length) / 2; pts.push([o.x - r, o.y - r], [o.x + r, o.y + r]); });
+    if (!pts.length) { map.setView([S.site.lat, S.site.lon], 19, { animate }); return; }
+    const b = L.latLngBounds(pts.map(llOf));
+    map.fitBounds(b.pad(0.15), { padding: [70, 70], maxZoom: 20.5, animate });
+  }
   function setBase(b) {
     base = b;
     [layers.sat, layers.osm].forEach(l => { if (map.hasLayer(l)) map.removeLayer(l); });
@@ -523,11 +534,12 @@
     init(a) { api = a; S = a.state; PN = a.PN; PH = a.PH; loadD(); wire(); syncInputs(); },
     show() {
       if (!root.L) { $('#pl-map').innerHTML = '<p class="hint" style="padding:20px">The map library (Leaflet) did not load. Check the connection and reload.</p>'; return; }
-      initMap(); setTimeout(() => { map.invalidateSize(); }, 30);
-      if (map) map.setView([S.site.lat, S.site.lon], Math.max(map.getZoom(), 18), { animate: false });
+      initMap(); setTimeout(() => { map.invalidateSize(); focusDesign(false); }, 30);
+      focusDesign(false);
       syncInputs(); redraw(); refreshSummary(); api.renderSavedSites(); api.renderResults();
     },
-    siteMoved(moved) { if (moved) sel = null; if (map) map.setView([S.site.lat, S.site.lon], 19); syncInputs(); redraw(); refreshSummary(); },
+    siteMoved(moved) { if (moved) sel = null; focusDesign(false); syncInputs(); redraw(); refreshSummary(); },
+    focusDesign,
     redraw() { if (S && S.view === 'design') { redraw(); syncInputs(); refreshSummary(); } },
     refreshSummary() { if (S && S.view === 'design') refreshSummary(); },
     // exposed for tests

@@ -75,6 +75,8 @@ def handle(route):
         pkg, rel = path.split('/', 1)
         name = pkg.rsplit('@', 1)[0]
         return serve_dep(route, name, rel)
+    if u.netloc == 'cdnjs.cloudflare.com' and '/jspdf/' in u.path:
+        return serve_dep(route, 'jspdf', 'dist/' + u.path.rsplit('/', 1)[1])
     if u.netloc == 'cdnjs.cloudflare.com' and '/leaflet/' in u.path:
         return serve_dep(route, 'leaflet', 'dist/' + u.path.rsplit('/', 1)[1].replace('.min.', '.'))
     if u.netloc == 'server.arcgisonline.com':

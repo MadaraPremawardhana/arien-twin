@@ -2,6 +2,7 @@ const P = require('../src/physics.js');
 const W = require('../src/weather.js');
 const PN = require('../src/panels.js');
 const PL = require('../src/places.js');
+const FI = require('../src/finance.js');
 let fails = 0, passes = 0;
 function ok(cond, msg) { if (cond) passes++; else { fails++; console.log('FAIL:', msg); } }
 function near(a, b, tol, msg) { ok(Math.abs(a - b) <= tol, `${msg}: got ${a.toFixed(4)}, want ${b} ±${tol}`); }
@@ -247,6 +248,46 @@ ok(W.describe(61, 90) === 'Light rain' && W.describe(1, 10) === 'Clear sky', 'we
   let yLive = 0; const yFetch = async (u) => u.startsWith('https://cache.test/') ? { status: 200, ok: true, json: async () => yJson } : (yLive++, { status: 503, ok: false, json: async () => ({}) });
   const ys = await W.fetchSeries({ mode: 'year', lat, lon, cacheBase: 'https://cache.test/' }, yFetch);
   ok(ys.fromCache && ys.time.length === 8760 && yLive === 0 && /last 12 months/.test(ys.source), 'a 3-day-old cached year is used without calling Open-Meteo');
+  // --- finance ---
+  const hrs = Array.from({ length: 8760 }, (_, i) => Date.UTC(2025, 10, 1) + i * 3600000);
+  const ld = FI.loadProfile(hrs, 2500, 0);
+  near(ld.reduce((a, b) => a + b, 0), 2500, 1e-6, 'household profile sums to the annual use');
+  ok(Math.max(...ld) > 3 * Math.min(...ld), 'profile has day/night shape');
+  near(hrs.reduce((t, h) => t + FI.loadAt(h, 2500, 0), 0), 2500, 5, 'instantaneous demand integrates to the annual use');
+  const bell = hrs.map(t => { const h = new Date(t).getUTCHours() + 0.5; return h > 6 && h < 18 ? Math.sin((h - 6) / 12 * Math.PI) ** 2 : 0; });
+  const bs = bell.reduce((a, b) => a + b, 0), pv4 = bell.map(v => v * 4000 / bs);
+  const sc0 = FI.selfConsumption(pv4, ld), sc5 = FI.selfConsumption(pv4, ld, { capacity: 5, power: 2.5, efficiency: 0.9 });
+  near(sc0.direct + sc0.exported, 4000, 1e-6, 'no battery: generation = used + exported');
+  near(sc0.selfUsed + sc0.imported, 2500, 1e-6, 'no battery: demand = solar used + imported');
+  ok(sc0.selfUseShare > 0.15 && sc0.selfUseShare < 0.6, 'self-use share plausible without a battery: ' + (sc0.selfUseShare * 100).toFixed(1) + '%');
+  ok(sc5.selfUseShare > sc0.selfUseShare + 0.1 && sc5.exported < sc0.exported && sc5.selfUsed <= 2500 + 1e-9, 'battery raises self-use: ' + (sc5.selfUseShare * 100).toFixed(1) + '%');
+  ok(sc5.direct + sc5.exported <= 4000 + 1e-6 && sc5.fromBattery <= (4000 - sc5.direct - sc5.exported) * 0.9 + 1e-6, 'battery losses respected');
+  const cf0 = FI.cashflow({ kwp: 5, annualDcKWh: 5000, selfUseShare: 0.3 });
+  ok(cf0.capex === 5 * 1600, 'installed cost by size (4–10 kWp at £1,600/kWp): ' + cf0.capex);
+  near(cf0.years[0].generation, 5000 * 0.86 * 0.99, 1e-6, 'year 1: system losses and first-year ageing');
+  near(cf0.years[1].generation / cf0.years[0].generation, 0.996, 1e-9, 'ageing 0.4% a year after year 1');
+  near(cf0.years[0].selfSaving, 5000 * 0.86 * 0.99 * 0.3 * 0.2632, 1e-6, 'bill saving at the Ofgem cap rate');
+  near(cf0.years[0].exportIncome, 5000 * 0.86 * 0.99 * 0.7 * 0.12, 1e-6, 'export at 12p');
+  near(cf0.years[1].importPrice / cf0.years[0].importPrice, 1.02, 1e-9, 'import price rises 2% a year');
+  ok(cf0.years[11].costs === 1000 && cf0.years[10].costs === 0, 'inverter replaced in year 12');
+  const pb = cf0.years.findIndex(r => r.cumulative >= 0);
+  ok(cf0.payback > pb && cf0.payback <= pb + 1 + 1e-9 && cf0.years[pb - 1].cumulative < 0, 'payback interpolated where the running total crosses zero: ' + cf0.payback.toFixed(2));
+  const t10 = cf0.totals(10);
+  near(t10.net, t10.savings - t10.costs - cf0.capex, 1e-6, '10-year net position');
+  near(t10.roi, t10.net / cf0.capex, 1e-12, '10-year return');
+  const cfq = FI.cashflow({ kwp: 5, annualDcKWh: 5000, selfUseShare: 0.3, assumptions: { totalCostOverride: 6000, selfUseOverride: 50 } });
+  ok(cfq.capex === 6000 && cfq.selfUseShare === 0.5, 'a quote and a self-use override replace the estimates');
+  // recommendations: run appliances around the middle of a sunny day
+  const ft = Array.from({ length: 96 * 2 }, (_, i) => Date.UTC(2026, 5, 20) + i * 900000);
+  const fk = ft.map(t => { const h = (t % 86400000) / 3600000; return h > 5 && h < 21 ? 2.6 * Math.sin((h - 5) / 16 * Math.PI) ** 2 : 0; });
+  const rc = FI.recommend(ft, fk, { utcOffsetMs: 0, annualUse: 2500, now: Date.UTC(2026, 5, 20, 0, 0), days: 2 });
+  const wash = rc[0].devices.find(d => d.id === 'washer');
+  const mid = (new Date(wash.start).getUTCHours() + new Date(wash.end).getUTCHours()) / 2;
+  ok(rc.length === 2 && wash.share > 0.9 && mid >= 11 && mid <= 15, 'washing machine around midday, mostly solar: ' + new Date(wash.start).toISOString().slice(11, 16) + ' ' + (wash.share * 100).toFixed(0) + '%');
+  const ev = rc[0].devices.find(d => d.id === 'ev');
+  ok(ev.share < wash.share, 'a 2.3 kW EV top-up is covered less than a washing machine');
+  const rcLate = FI.recommend(ft, fk, { utcOffsetMs: 0, annualUse: 2500, now: Date.UTC(2026, 5, 20, 16, 0), days: 1 });
+  ok(rcLate[0].devices.every(d => d.start == null || d.start >= Date.UTC(2026, 5, 20, 15, 45)), 'no windows in the past');
   console.log(`${passes} passed, ${fails} failed`);
   process.exit(fails ? 1 : 0);
   })();
