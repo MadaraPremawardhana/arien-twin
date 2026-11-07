@@ -1,0 +1,28 @@
+{
+ "site": {
+  "lat": 51.99564350977578,
+  "lon": -0.9906258867252853
+ },
+ "updated": "2026-11-07T10:29:46Z",
+ "files": [
+  "forecast.json",
+  "historical.json",
+  "previous.json",
+  "year.json"
+ ],
+ "variables": [
+  "temperature_2m",
+  "cloud_cover",
+  "wind_speed_10m",
+  "wind_direction_10m",
+  "weather_code",
+  "shortwave_radiation",
+  "diffuse_radiation"
+ ],
+ "leads": [
+  1,
+  2,
+  3,
+  4
+ ]
+}
