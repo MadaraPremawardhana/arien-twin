@@ -2295,7 +2295,7 @@ void main() {
     $('#w-ion-wrap').hidden = !(state.world.src === 'ion' || state.world.src === 'google-ion'); $('#w-g-wrap').hidden = state.world.src !== 'google';
   }
   function openSetup() {
-    const b = $('#boot'); b.hidden = false; b.classList.remove('gone');
+    const b = $('#boot'); b.hidden = false; b.classList.remove('gone', 'quiet');
     $('#s-src').value = state.world.src; $('#s-ion').value = state.world.ion; $('#s-google').value = state.world.google;
     $('#s-om').value = state.wx.apiKey || ''; $('#s-remember').checked = state.world.remember; syncSetupInputs();
   }
@@ -2459,15 +2459,32 @@ void main() {
     $('#w-admin').addEventListener('click', () => openDrawer('admin'));
     if (!/github\.io$/.test(location.hostname) && !siteConfig) $('#ad-current').textContent += ' Publishing works once the page is served from your GitHub Pages site; until then, use Download config.json.';
   }
-  /** Visitors with a published config: run both connect steps on their own */
+  /**
+   * Published settings with a key: open straight into the 3D world and the 7-day forecast, with only a short
+   * splash (no connect screen). If the world key is refused, fall back to the map so the site still opens;
+   * World → Connect changes either later.
+   */
   async function autoConnect() {
     $('#s-src').value = state.world.src; $('#s-ion').value = state.world.ion; $('#s-google').value = state.world.google; $('#s-om').value = state.wx.apiKey || '';
     $('#s-wx-mode').value = state.wx.mode === 'current' ? 'current' : 'forecast'; syncSetupInputs();
-    showSetupNote(`Opening ${state.site.name || 'the site'} with the settings your administrator published…`, 'info');
-    if (!(await setupWorld())) { $('#setup-note').hidden = true; return; }
-    if (!(await setupWeather())) return;
-    $('#setup-note').hidden = true;
+    const boot_ = $('#boot'); boot_.classList.add('quiet'); splash(`Loading ${state.site.name || 'the site'}…`);
+    let worldOk = await setupWorld();
+    if (!worldOk && $('#s-src').value !== 'none') {
+      const why = $('#s-world-msg').textContent.trim(), wanted = worldLabelFor($('#s-src').value) || 'The 3D world';
+      $('#s-src').value = 'none'; syncSetupInputs(); splash('Loading the map…');
+      worldOk = await setupWorld();
+      if (worldOk) toast(`${wanted} did not load${why ? ': ' + why : '.'} Showing the map instead; change it under World → Connect.`, 'warn', 12000);
+    }
+    if (!worldOk) { boot_.classList.remove('quiet'); showSetupNote('The 3D world could not start. Check the connection, or choose another world below.'); return; }
+    // the world is up: show it, and bring in the forecast behind the scenes
+    finishSetup(true);
+    $('#s-wx-mode').value = 'forecast';
+    const wxOk = await setupWeather();
+    if (!wxOk) toast(`The 7-day forecast did not load: ${$('#s-wx-msg').textContent.trim()} Try again from the Weather panel.`, 'warn', 12000);
   }
+  function splash(msg) { const el = $('#boot-splash-msg'); if (el) el.textContent = msg; }
+  /** Leave the start-up splash and show the connect card (no published key, #setup, or something failed). */
+  function showConnectCard() { $('#boot').classList.remove('quiet'); }
 
   // ------------------------------------------------------------------ boot
   async function boot() {
@@ -2477,7 +2494,7 @@ void main() {
       const why = emb === 'claude' ? 'Claude’s file preview does not allow it to run. Download the file and open it in Chrome or Edge.'
         : cspBlocked.size || emb === 'frame' ? 'This viewer’s security policy does not allow it to run. Open the file directly in Chrome or Edge.'
         : 'It could not be downloaded from cdn.jsdelivr.net. Check your internet connection and reload.';
-      showSetupNote('The 3D engine (CesiumJS) did not start. ' + why);
+      showConnectCard(); showSetupNote('The 3D engine (CesiumJS) did not start. ' + why);
       $('#s-world').disabled = true; return;
     }
     const had = loadStored();
@@ -2502,11 +2519,11 @@ void main() {
     if (emb === 'claude') showSetupNote(PREVIEW_HINT);
     else if (emb === 'frame') showSetupNote('This page is running inside another page, which may block map and weather requests. If loading fails, open the file directly in Chrome or Edge.');
     const okWorkers = await workersUsable();
-    if (!okWorkers) { showSetupNote('This viewer blocks the background threads the 3D engine needs, so the map cannot load here. Download the file and open it in Chrome or Edge.'); return; }
+    if (!okWorkers) { showConnectCard(); showSetupNote('This viewer blocks the background threads the 3D engine needs, so the map cannot load here. Download the file and open it in Chrome or Edge.'); return; }
     const needKey = { ion: state.world.ion, 'google-ion': state.world.ion, google: state.world.google }[state.world.src];
     const haveKey = state.world.src === 'none' || !!needKey;
     if (siteConfig && siteConfig.autoConnect && haveKey && location.hash !== '#setup') { autoConnect(); return; }
-    $('#s-src').focus();
+    showConnectCard(); $('#s-src').focus();
   }
-  boot();
+  boot().catch((e) => { console.error(e); showConnectCard(); showSetupNote('The app did not start: ' + (e && e.message ? e.message : e)); });
 })();

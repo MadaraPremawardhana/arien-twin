@@ -543,6 +543,8 @@
   <div id="modebar" hidden><span id="modebar-text"></span> <kbd>Esc</kbd> to cancel</div>
   <div id="toasts" aria-live="polite"></div>
   <div id="boot">
+    <script>if (/^https?:$/.test(location.protocol) && location.hash !== '#setup') document.getElementById('boot').classList.add('quiet');</script>
+    <div class="boot-splash" aria-live="polite"><img src="@@LOGO@@" alt="ARIEN" width="180" height="37"><span class="spinner"></span><span id="boot-splash-msg">Loading…</span></div>
     <div class="setup" id="setup" role="dialog" aria-labelledby="setup-title">
       <header class="setup-head">
         <img class="setup-logo" src="@@LOGO@@" alt="ARIEN" width="150" height="31">

@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updated": "2026-11-02T12:00:00Z",
+ "updated": "2026-11-10T12:00:00Z",
  "autoConnect": true,
  "site": {
   "name": "Buckingham, UK",
@@ -8,7 +8,8 @@
   "lon": -0.9906258867252853
  },
  "world": {
-  "src": "ion"
+  "src": "ion",
+  "ionToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJub25jZSI6IkxjUjFtX2ZId1huZEdHM2wiLCJqdGkiOiIyMjc4OTgxYy0xMjlkLTQ2YmQtOWEwMC00NjdmMTQ4ZTM4MjciLCJpZCI6NTAwNDYsInN1YiI6Ik1hZGFyYSIsImlzcyI6Imh0dHBzOi8vYXBpLmNlc2l1bS5jb20iLCJhdWQiOiJXZWIgRGlnaXRhbCBUd2luIiwiaWF0IjoxNzkzNjI4NzYzfQ.Z6xQY74NfNn9UIAHx8DsrNWcRSPod73NH-hyTi6qyj4"
  },
  "weather": {
   "mode": "forecast"

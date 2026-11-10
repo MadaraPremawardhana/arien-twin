@@ -88,7 +88,17 @@ The site reads its keys from `config.json` at the repository root, so the key li
    "world": { "src": "ion", "ionToken": "eyJhbGciOi…" },
    ```
    Keep `"autoConnect": true`. **Commit changes.** GitHub Pages republishes in about a minute (browsers may cache for up to 10).
-3. Visitors now go straight to the 3D world. `…/arien-twin/#setup` still opens the connect screen.
+3. Visitors now go straight to the 3D world (see **Start-up** below). `…/arien-twin/#setup` still opens the connect screen.
+
+The published site has a token in `config.json` now (Cesium ion terrain + OSM Buildings).
+
+### Start-up
+
+With `"autoConnect": true` and a key in `config.json` (or `"src": "none"`), the page shows only the ARIEN logo and a spinner, loads the 3D world, then loads the Open-Meteo forecast for the next 7 days. The connect screen is not shown.
+
+- If Cesium ion refuses the token (wrong Allowed URLs, revoked, out of quota), the page opens on the map instead and says why in a warning.
+- If the forecast does not load, the twin still opens; a warning points to the Weather panel.
+- Visitors change the world, keys or weather later under **World → Connect**, or the Weather panel. `…/#setup` opens the connect screen first.
 
 The admin panel does the same: tick **Include keys** and press **Publish settings**. Anyone can read a key that a web page uses, which is why step 1 restricts it; rotate it now and then (new token, publish, delete the old one).
 
@@ -103,7 +113,7 @@ Only the variables the thesis models use are requested: `temperature_2m`, `cloud
 ## Admin setup (all in the browser)
 
 1. **Lock the keys to this site** before publishing them:
-   - **Cesium ion** (cesium.com/ion → Access Tokens): a token with `assets:read`, only the assets you use (World Terrain 1, Bing imagery 2, OSM Buildings 96188, Google Photorealistic 2275207), and **Allowed URLs** = `https://madarapremawardhana.github.io/arien-twin/`.
+   - **Cesium ion** (cesium.com/ion → Access Tokens): a token with `assets:read`, only the assets you use (World Terrain 1, Bing imagery 2, OSM Buildings 96188, Google Photorealistic 2275207), and **Allowed URLs** = `https://madarapremawardhana.github.io` (domain only; a path-restricted token is refused).
    - **Google Maps Platform** (if used): restrict the key to the **Map Tiles API**, website restriction `https://madarapremawardhana.github.io/*`, and a daily quota.
 2. Open the site. On the connect screen paste the token → **Load 3D world** → **Load weather**.
 3. Place arrays and obstacles and choose models. Obstacles are real-size models with three levels of detail (close-up textured, mid, far); **Objects → Measure in the 3D view** and **Match height to the 3D tiles** size them against the photorealistic tiles.
@@ -120,6 +130,7 @@ node test/physics.test.js     # physics and weather unit tests
 # headless browser checks (need: npm install cesium@1.146.0 three@0.147.0 chart.js@4.4.1)
 ARIEN_DEPS=node_modules python3 test/run_browser.py /tmp/shots full
 ARIEN_DEPS=node_modules python3 test/admin_check.py /tmp/admin
+ARIEN_DEPS=node_modules python3 test/quiet_start_check.py /tmp/quiet  # start-up without the connect screen
 ARIEN_DEPS=node_modules python3 test/diag_check.py
 ARIEN_DEPS=node_modules python3 test/planner_check.py /tmp/planner   # needs leaflet@1.9.4 too
 ARIEN_DEPS=node_modules python3 test/models_check.py /tmp/models
