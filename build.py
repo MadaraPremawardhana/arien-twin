@@ -17,6 +17,7 @@ parts = {
     "/*@@FINANCE@@*/": (src / "finance.js").read_text(),
     "/*@@DASHBOARD@@*/": (src / "dashboard.js").read_text(),
     "/*@@REPORT@@*/": (src / "report.js").read_text(),
+    "/*@@ACCOUNT@@*/": (src / "account.js").read_text(),
     "/*@@APP@@*/": (src / "app.js").read_text(),
 }
 for marker, body in parts.items():

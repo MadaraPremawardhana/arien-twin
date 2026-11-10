@@ -74,9 +74,21 @@ Values are STC from the manufacturers' datasheets (sources in `src/panels.js`). 
 
 ### Saved sites, forecast and yield
 
-- **Site → Saved sites** and the planner's **Save** keep named designs in this browser. A blank name becomes, for example, "Buckingham 5.16 kWp south-facing". To share a design use the admin publish or **Save scene**.
+- **Site → Saved sites** and the planner's **Save** keep named designs in this browser. A blank name becomes, for example, "Buckingham 5.16 kWp south-facing". To share a design use the admin publish or **Save scene**. Inside the ARIEN web app they go to the user's account instead (next section).
 - **Forecast**: next 7 days, daily kWh, live model.
 - **Est. yield**: hourly physics over ERA5 reanalysis for the last 12 months (365 days ending 6 days ago), with every compared model, monthly kWh, kWh/kWp and the weather-based shading loss. No inverter, cable or soiling losses. The planner's shading figure before that is a clear-sky estimate (21st of each month, Kasten with no cloud).
+
+## ARIEN account (inside arien.base44.app)
+
+When the twin runs inside the ARIEN web app (`/twin`, `/digital-twin`, the dashboard), saved sites and results belong to the signed-in user, the same `SolarSite` records the web app uses, on every device. `src/account.js` handles it:
+
+- The twin sends a `hello` to its parent page, only to `https://arien.base44.app`. The page answers with the user's first name, plan and site list. It does every read and write under the account's access rules, so no password, token or email reaches the twin.
+- **Save** writes the twin's full scene (`twin_scene`), its fresh results (`twin_results`) and the plain fields the web app reads. Plain fields include panel count, kWp, tilt, azimuth, tariffs, install cost, `annual_kwh_cached`, and obstacles as footprints with heights. A matching name updates that site. On a plan with a site limit (Household: 1), a new name offers to replace the saved site or open Plans.
+- Forecast and yield runs on the open site are kept with it, unless the design has changed since it was saved.
+- Sites drawn in the web designer open in the twin. Panels are grouped into rows, the web panel models map to the panel library, obstructions become buildings, trees, walls and so on, and tariffs carry over. If a site was changed in the web designer after the twin saved it, the twin rebuilds it from the web layout.
+- Sites saved only in this browser are offered once for copying into the account.
+- Opened on its own (github.io), or framed by any other site, the twin keeps using this browser's storage and doesn't wait for an answer.
+- The web app uses the message `id` both to pair replies and as the site id, so the twin sends one request at a time and matches replies on type and site id.
 
 ## Put the Cesium ion key in the site ("hardcode" it)
 
@@ -127,10 +139,12 @@ Published keys are readable by visitors' browsers, which is why step 1 restricts
 ```
 python3 build.py              # src/* → index.html
 node test/physics.test.js     # physics and weather unit tests
+node test/account.test.js     # account bridge: conversions and the message channel
 # headless browser checks (need: npm install cesium@1.146.0 three@0.147.0 chart.js@4.4.1)
 ARIEN_DEPS=node_modules python3 test/run_browser.py /tmp/shots full
 ARIEN_DEPS=node_modules python3 test/admin_check.py /tmp/admin
 ARIEN_DEPS=node_modules python3 test/quiet_start_check.py /tmp/quiet  # start-up without the connect screen
+ARIEN_DEPS=node_modules python3 test/account_check.py /tmp/account     # inside a copy of the web app's /twin page
 ARIEN_DEPS=node_modules python3 test/diag_check.py
 ARIEN_DEPS=node_modules python3 test/planner_check.py /tmp/planner   # needs leaflet@1.9.4 too
 ARIEN_DEPS=node_modules python3 test/models_check.py /tmp/models
@@ -179,7 +193,8 @@ All in `src/physics.js`, unit-tested in `test/physics.test.js` (146 checks, incl
 src/physics.js     solar geometry, 5 models, thermal, ray casting, metrics (no DOM)
 src/weather.js     Open-Meteo URLs and parsing, weather cache, CSV import, interpolation
 src/panels.js      panel library from datasheets
-src/places.js      place, address and postcode search; automatic names; saved sites
+src/places.js      place, address and postcode search; automatic names; saved sites (this browser)
+src/account.js     ARIEN account bridge (inside arien.base44.app): messages, scene <-> SolarSite record, results
 src/planner.js     2D Design planner (Leaflet), roof-area filling, Design kit
 src/finance.js     household profile, self-consumption (battery-ready), cash flows, payback, recommendations
 src/charts.js      shared Chart.js styling
@@ -190,6 +205,8 @@ src/app.js         Cesium world, arrays/obstacles, simulation loop, visuals, UI
 src/template.html  markup; src/style.css styles
 build.py           inlines everything into index.html (what GitHub Pages serves)
 test/physics.test.js   node test/physics.test.js
+test/account.test.js   node test/account.test.js
+test/account_check.py  the twin inside a copy of the web app's /twin page (handler as published 10 Nov 2026)
 test/run_browser.py    headless Chrome check with mocked CDN, tiles and weather
 test/models_check.py   renders every obstacle at each level of detail
 tools/fetch_weather.py fills the weather-data branch (run by the workflow)

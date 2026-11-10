@@ -1,7 +1,8 @@
 /* ARIEN Twin Studio — browser digital twin (CesiumJS world, Open-Meteo weather, thesis physics). */
 (function () {
   'use strict';
-  const PH = window.ArienPhysics, WX = window.ArienWeather, PN = window.ArienPanels, PL = window.ArienPlaces;
+  const PH = window.ArienPhysics, WX = window.ArienWeather, PN = window.ArienPanels, PL = window.ArienPlaces, AC = window.ArienAccount;
+  const bridge = AC ? AC.createBridge() : { embedded: false };
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   const D2R = Math.PI / 180, R2D = 180 / Math.PI;
@@ -31,6 +32,7 @@
     world: { src: 'none', ion: '', google: '', remember: false },
     wx: { mode: 'forecast', series: null, measured: null, csvFile: null },
     arrays: [], objects: [], sel: null,
+    account: null, accountSiteId: null, accountDirty: false, // the ARIEN web-app account, when the twin runs inside it
     live: 'rwghi',
     compare: { rwghi: true, hdkr: true, karamov: true, kasten: true, balint: false, seasonal: false },
     params: clone(PH.DEFAULT_PARAMS), thermalCa: 9600,
@@ -1706,12 +1708,20 @@ void main() {
 
   // ------------------------------------------------------------------ saved sites (named designs, this browser)
   const storageOk = () => { try { localStorage.setItem('arien-probe', '1'); localStorage.removeItem('arien-probe'); return true; } catch (e) { return false; } };
-  function listSites() { try { return PL.listSites(localStorage); } catch (e) { return []; } }
+  function listLocalSites() { try { return PL.listSites(localStorage); } catch (e) { return []; } }
+  /** Saved sites as one list: the ARIEN account's when the twin runs inside the web app, otherwise this browser's */
+  function listSites() {
+    if (state.account) return state.account.sites.map(s => ({ id: s.id, name: s.name || 'Untitled site', savedAt: s.updated_date, panels: s.panel_count || 0, kwp: s.capacity_kwp || 0,
+      place: isFinite(s.latitude) && isFinite(s.longitude) && s.latitude !== null ? `${(+s.latitude).toFixed(4)}, ${(+s.longitude).toFixed(4)}` : '', account: true, twin: !!s.has_twin_scene }));
+    return listLocalSites().map(x => { const arrs = (x.snap && x.snap.arrays) || [];
+      return { ...x, panels: arrs.reduce((t, a) => t + a.rows * a.cols, 0), kwp: arrs.reduce((t, a) => t + PN.arrayKwp(a), 0), place: ((x.snap && x.snap.site && x.snap.site.name) || '').split(',').slice(0, 2).join(',') }; });
+  }
   function suggestedName() { return PL.autoName(state.site, state.arrays, PN.arrayKwp, listSites().map(x => x.name)); }
   function saveNamedSite(name) {
-    if (!storageOk()) { toast('This browser blocks saving. Use World → Save scene to download a file instead.', 'err'); return null; }
     const typed = String(name || '').trim();
     const finalName = typed || (state.designName && !state.designAuto ? state.designName : suggestedName());
+    if (state.account) { saveToAccount(finalName, { auto: !typed }); return { name: finalName, pending: true }; }
+    if (!storageOk()) { toast('This browser blocks saving. Use World → Save scene to download a file instead.', 'err'); return null; }
     state.designName = finalName; state.designAuto = !typed;
     const { entry, replaced } = PL.saveSite(localStorage, { name: finalName, snap: sceneSnapshot(), auto: !typed });
     toast(`${replaced ? 'Updated' : 'Saved'} “${entry.name}” in this browser.`, 'ok');
@@ -1719,13 +1729,17 @@ void main() {
     return entry;
   }
   function renderSavedSites() {
-    const list = listSites();
-    const html = list.length ? list.map(x => {
-      const n = (x.snap.arrays || []).reduce((t, a) => t + a.rows * a.cols, 0);
-      const d = new Date(x.savedAt);
-      return `<li data-id="${x.id}"><button class="saved-open" data-id="${x.id}">${escapeHtml(x.name)}<small>${n} panel${n === 1 ? '' : 's'} · ${d.getDate()} ${MONTHS[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}</small></button><button class="icon-btn danger saved-del" data-id="${x.id}" title="Delete"><svg><use href="#i-trash"/></svg></button></li>`;
-    }).join('') : '<li class="hint">No saved sites yet.</li>';
+    const list = listSites(), acct = state.account;
+    const note = acct ? `<li class="hint acct-note">Signed in${acct.user.first_name ? ' as <b>' + escapeHtml(acct.user.first_name) + '</b>' : ''} · sites save to your ARIEN account${acct.siteLimit != null ? ` (${escapeHtml(PLAN_NAMES[acct.user.plan] || '')} plan: ${acct.siteLimit} site${acct.siteLimit === 1 ? '' : 's'})` : ''}</li>` : '';
+    const html = note + (list.length ? list.map(x => {
+      const n = x.panels, d = new Date(x.savedAt), cur = acct && x.id === state.accountSiteId;
+      const when = isFinite(d) ? ` · ${d.getDate()} ${MONTHS[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}` : '';
+      return `<li data-id="${x.id}"${cur ? ' class="current"' : ''}><button class="saved-open" data-id="${x.id}">${escapeHtml(x.name)}<small>${n} panel${n === 1 ? '' : 's'}${when}${cur ? ' · open' : ''}</small></button><button class="icon-btn danger saved-del" data-id="${x.id}" title="Delete"><svg><use href="#i-trash"/></svg></button></li>`;
+    }).join('') : `<li class="hint">No saved sites yet.</li>`);
     $$('.saved-list').forEach(el => { el.innerHTML = html; });
+    const hint = $('#site-save-hint');
+    if (hint) hint.innerHTML = acct ? 'Leave the name empty for one made from the place, size and orientation. Saved to your ARIEN account, so the site and its results are on every device you sign in on.'
+      : 'Leave the name empty for one made from the place, size and orientation. Saved in this browser; share with <b>World → Site settings for visitors</b> or <b>Save scene</b>.';
     $$('.site-name-input').forEach(el => { if (document.activeElement !== el) el.value = state.designAuto ? '' : (state.designName || ''); el.placeholder = state.arrays.length || state.site.name ? `Auto: ${suggestedName()}` : 'Auto-named'; });
   }
   async function openSnapshot(snap, label) {
@@ -1743,14 +1757,162 @@ void main() {
     if (state.wx.mode !== 'csv') loadWeather(true);
   }
   async function openNamedSite(id) {
-    const x = listSites().find(e => e.id === id); if (!x) return;
+    if (state.account) return openAccountSite(id);
+    const x = listLocalSites().find(e => e.id === id); if (!x) return;
     try {
       await openSnapshot(x.snap, `“${x.name}”`); state.designName = x.name; state.designAuto = !!x.auto; renderSavedSites();
       if (state.view === 'design' && window.ArienPlanner) ArienPlanner.focusDesign();
     }
     catch (e) { toast('Could not open that site: ' + e.message, 'err'); }
   }
-  function deleteNamedSite(id) { try { PL.removeSite(localStorage, id); } catch (e) { /* ignore */ } renderSavedSites(); }
+  function deleteNamedSite(id) {
+    if (state.account) { deleteAccountSite(id); return; }
+    try { PL.removeSite(localStorage, id); } catch (e) { /* ignore */ } renderSavedSites();
+  }
+
+  // ------------------------------------------------------------------ ARIEN account (when the twin runs inside arien.base44.app)
+  // The page around the twin reads and writes the user's SolarSite records; the twin only exchanges messages with it.
+  const PLAN_NAMES = { household: 'Household', academic: 'Academic', pro: 'Pro / Installer', industry: 'Industry' };
+  const acctCtx = () => ({ PN, financeDefaults: window.ArienFinance ? ArienFinance.DEFAULTS : {}, costPerKwpFor: window.ArienFinance ? ArienFinance.costPerKwpFor : null, groundZ: state.site.groundZ || 0 });
+  function toastActions(msg, actions, kind = 'info', ms = 15000) {
+    const el = document.createElement('div'); el.className = 'toast with-actions ' + kind;
+    const p = document.createElement('div'); p.textContent = msg; el.appendChild(p);
+    const row = document.createElement('div'); row.className = 'toast-actions';
+    actions.forEach(([label, fn, primary]) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn' + (primary ? ' primary' : ''); b.textContent = label; b.onclick = () => { el.remove(); if (fn) fn(); }; row.appendChild(b); });
+    el.appendChild(row); $('#toasts').appendChild(el); setTimeout(() => el.remove(), ms);
+    return el;
+  }
+  function whenBooted(fn) {
+    const up = () => $('#boot').classList.contains('gone');
+    if (up()) { fn(); return; }
+    const iv = setInterval(() => { if (up()) { clearInterval(iv); fn(); } }, 300);
+  }
+  /** Ask the page around the twin for the signed-in account. Resolves with the record it wants open, or null. */
+  async function accountConnect() {
+    if (!bridge.embedded) return null;
+    const wanted = new URLSearchParams(location.search).get('site') || undefined;
+    let s; try { s = await bridge.hello(wanted); } catch (e) { return null; } // not inside the ARIEN web app: sites stay in this browser
+    if (!s || s.type !== 'session' || !s.user || !s.user.id) return null;
+    state.account = { user: s.user, sites: Array.isArray(s.sites) ? s.sites : [], siteLimit: Number.isFinite(s.siteLimit) ? s.siteLimit : null };
+    renderSavedSites(); dashSitesChanged();
+    return s.open || null;
+  }
+  function dashSitesChanged() { if (window.ArienDashboard && ArienDashboard.rerender) ArienDashboard.rerender(); }
+  async function refreshAccountSites() {
+    if (!state.account) return;
+    try { const r = await bridge.list(); if (Array.isArray(r.sites)) state.account.sites = r.sites; } catch (e) { /* keep the last list */ }
+    renderSavedSites(); dashSitesChanged();
+  }
+  /** Record → scene; fetches the web designer's panel file when the record only links to it */
+  async function accountSnapshot(rec) {
+    const ctx = acctCtx();
+    const needPanels = !rec.twin_scene || AC.editedElsewhere(rec, rec.twin_scene, ctx);
+    if (needPanels && !Array.isArray(rec.panel_positions) && typeof rec.panels_json === 'string' && /^https:\/\//.test(rec.panels_json)) {
+      try { const r = await fetch(rec.panels_json); if (r.ok) { const j = await r.json(); if (Array.isArray(j)) ctx.positions = j.slice(0, 5000); } } catch (e) { /* fall back to the panel count */ }
+    }
+    return AC.recordToSnapshot(rec, ctx);
+  }
+  /** Start-up: put the account's site into the scene before the 3D world loads, so the world opens there */
+  async function applyAccountRecordEarly(rec) {
+    const { snap, rebuilt } = await accountSnapshot(rec);
+    const src = state.world.src;
+    if (!applySnapshot(snap)) return false;
+    state.world.src = src;
+    state.arrays.forEach(a => { a.worldSrc = a.worldSrc || 'none'; }); state.objects.forEach(o => { o.worldSrc = o.worldSrc || 'none'; });
+    state.designName = rec.name || state.designName; state.designAuto = false; state.accountSiteId = rec.id; state.accountDirty = false;
+    if (rebuilt) whenBooted(() => toast(`“${rec.name}” was changed in the web designer since it was saved here, so the twin rebuilt it from that layout.`, 'info', 9000));
+    return true;
+  }
+  async function openAccountSite(id, recIn) {
+    try {
+      const rec = recIn || (await bridge.get(id)).site;
+      if (!rec) { toast('That site is no longer in your account.', 'warn'); refreshAccountSites(); return; }
+      const { snap, rebuilt } = await accountSnapshot(rec);
+      await openSnapshot(snap, `“${rec.name || 'site'}”`);
+      state.designName = rec.name || ''; state.designAuto = false; state.accountSiteId = rec.id; state.accountDirty = false; renderSavedSites();
+      if (rebuilt) toast(`“${rec.name}” was changed in the web designer since it was saved here, so the twin rebuilt it from that layout.`, 'info', 9000);
+      if (state.view === 'design' && window.ArienPlanner) ArienPlanner.focusDesign();
+    } catch (e) { toast('Could not open that site: ' + (e.message || e), 'err'); }
+  }
+  /** Fresh results as the web app keeps them with a site */
+  function accountResults() {
+    const y = state.yieldRes && !state.yieldRes.stale ? state.yieldRes : null, f = state.forecastRes && !state.forecastRes.stale ? state.forecastRes : null;
+    if (!y && !f) return null;
+    return AC.summarise({ yieldRes: y, forecastRes: f, acYear: acFactor(true), acDay: acFactor(false), modelLabel, utcOffset: utcOffset(), objects: state.objects.length });
+  }
+  async function saveToAccount(name, { replaceId, auto } = {}) {
+    const acct = state.account;
+    const same = acct.sites.find(s => String(s.name || '').toLowerCase() === name.toLowerCase());
+    const id = replaceId || (same && same.id) || null;
+    if (!id && acct.siteLimit != null && acct.sites.length >= acct.siteLimit) { limitReached(name); return null; }
+    const snap = sceneSnapshot(); snap.designName = name;
+    const fields = AC.flatFields(snap, acctCtx()), res = accountResults();
+    if (res && res.annual_kwh != null) fields.annual_kwh_cached = res.annual_kwh;
+    if (res && res.shading_loss_pct != null) fields.shading_pct = res.shading_loss_pct;
+    try {
+      const r = await bridge.save({ id, name, fields, twin_scene: snap, twin_results: res || undefined });
+      if (!r.ok) { if (r.reason === 'limit') limitReached(name); else toast('Your ARIEN account did not save the site. Try again in a moment.', 'err', 8000); return null; }
+      state.accountSiteId = r.id; state.accountDirty = false; state.designName = r.name || name; state.designAuto = !!auto;
+      toast(`${id ? 'Updated' : 'Saved'} “${r.name || name}” in your ARIEN account.`, 'ok');
+      await refreshAccountSites();
+      return r;
+    } catch (e) { toast(e.code === 'too-big' ? e.message : 'Could not reach your ARIEN account: ' + e.message, 'err', 9000); return null; }
+  }
+  function limitReached(name) {
+    const acct = state.account, plan = PLAN_NAMES[acct.user.plan] || 'current', n = acct.siteLimit, cur = acct.sites[0];
+    const acts = [];
+    if (cur) acts.push([`Replace “${cur.name}”`, () => saveToAccount(name, { replaceId: cur.id }), true]);
+    acts.push(['See plans', () => { bridge.navigate('/plans').catch(() => {}); }]);
+    acts.push(['Not now']);
+    toastActions(`Your ${plan} plan keeps ${n} site${n === 1 ? '' : 's'}. Replace ${n === 1 ? 'it' : 'one'} with this design, or upgrade to keep more.`, acts, 'warn');
+  }
+  let acctResultsTimer = null;
+  /** After a forecast or yield run on the site that is open from the account, keep its results with it */
+  function accountResultsSoon() {
+    if (!state.account || !state.accountSiteId || state.accountDirty) return;
+    clearTimeout(acctResultsTimer);
+    acctResultsTimer = setTimeout(async () => {
+      if (!state.account || !state.accountSiteId || state.accountDirty) return;
+      const res = accountResults(); if (!res) return;
+      try { await bridge.results(state.accountSiteId, res, res.annual_kwh); } catch (e) { /* the next save carries them */ }
+    }, 1500);
+  }
+  async function deleteAccountSite(id) {
+    try {
+      const r = await bridge.remove(id); if (r.ok === false) throw new Error('the account refused');
+      if (state.accountSiteId === id) state.accountSiteId = null;
+      toast('Deleted from your ARIEN account.', 'ok');
+    } catch (e) { toast('Could not delete that site: ' + e.message, 'err'); }
+    await refreshAccountSites();
+  }
+  /** Sites saved only in this browser: offer once per account to copy them in */
+  function offerImport() {
+    const acct = state.account; if (!acct) return;
+    const names = new Set(acct.sites.map(s => String(s.name || '').toLowerCase()));
+    const local = listLocalSites().filter(x => !names.has(String(x.name).toLowerCase()));
+    if (!local.length) return;
+    const key = 'arien-twin-import-' + acct.user.id;
+    try { if (localStorage.getItem(key)) return; } catch (e) { return; }
+    const done = () => { try { localStorage.setItem(key, new Date().toISOString()); } catch (e) { /* ignore */ } };
+    const n = local.length;
+    toastActions(`${n} site${n === 1 ? ' is' : 's are'} saved only in this browser. Copy ${n === 1 ? 'it' : 'them'} to your ARIEN account?`,
+      [['Copy to my account', () => { done(); importLocal(local); }, true], ['Not now', done]], 'info', 25000);
+  }
+  async function importLocal(local) {
+    let n = 0;
+    for (const x of local) {
+      const acct = state.account;
+      if (acct.siteLimit != null && acct.sites.length >= acct.siteLimit) {
+        toast(`Copied ${n}. Your ${PLAN_NAMES[acct.user.plan] || ''} plan keeps ${acct.siteLimit} site${acct.siteLimit === 1 ? '' : 's'}, so the rest stay in this browser.`, 'warn', 10000); return;
+      }
+      try {
+        const snap = { ...x.snap, designName: x.name };
+        const r = await bridge.save({ name: x.name, fields: AC.flatFields(snap, acctCtx()), twin_scene: snap });
+        if (!r.ok) break; n++; await refreshAccountSites();
+      } catch (e) { break; }
+    }
+    toast(`Copied ${n} site${n === 1 ? '' : 's'} to your ARIEN account.`, n ? 'ok' : 'warn');
+  }
 
   // ------------------------------------------------------------------ forecast and yield estimates
   const totalKwp = () => state.arrays.reduce((t, a) => t + PN.arrayKwp(a), 0);
@@ -1780,7 +1942,7 @@ void main() {
       series: { times: keep.map(i => run.times[i]), kw: keep.map(i => run.kw[k][i]), cloud: keep.map(i => run.cloud[i]), kwFree: keep.map(i => run.kwFree ? run.kwFree[i] : run.kw[k][i]) },
       shading: { freeKWh, lostKWh: Math.max(0, freeKWh - gotKWh), pct: freeKWh > 0 ? Math.max(0, freeKWh - gotKWh) / freeKWh : 0, by: lossesByCause(run.lostBy, keep, 0.25),
         samples: state.shade.samples, objects: state.objects.length } };
-    state.forecastRes = res; renderResults();
+    state.forecastRes = res; renderResults(); accountResultsSoon();
     return res;
   }
   /** Coarser cell grids keep a year of hourly shading quick; energy changes by well under 1% */
@@ -1795,7 +1957,7 @@ void main() {
       const ys = await yearWeather();
       setResultsBusy('Estimating yield: running the physics hour by hour…');
       const res = await runYield(ys, onProgress);
-      state.yieldRes = res; renderResults();
+      state.yieldRes = res; renderResults(); accountResultsSoon();
       return res;
     } catch (e) { toast('Yield estimate failed: ' + (e.message || e), 'err', 9000); setResultsBusy(''); return null; }
     finally { yieldBusy = false; }
@@ -1898,6 +2060,7 @@ void main() {
     if (state.forecastRes) { state.forecastRes.stale = true; refreshForecastSoon(); }
     updateQuickLoss(now ? 0 : 350);
     if (window.ArienPlanner && state.view === 'design') ArienPlanner.redraw();
+    if (state.account) state.accountDirty = true; // results no longer match the saved site until it is saved again
     renderSavedSites();
   }
   // result cards (shared by the Analysis panel and the planner)
@@ -2497,11 +2660,23 @@ void main() {
       showConnectCard(); showSetupNote('The 3D engine (CesiumJS) did not start. ' + why);
       $('#s-world').disabled = true; return;
     }
+    const accountP = accountConnect(); // inside arien.base44.app: the signed-in account (no wait anywhere else)
     const had = loadStored();
     siteConfig = await fetchSiteConfig();
     if (siteConfig) applySiteConfig(siteConfig, had);
-    state.firstRun = !had && !(siteConfig && siteConfig.scene);
-    if (!had && !(siteConfig && siteConfig.scene)) demoScene();
+    let fromAccount = false, late = false;
+    if (bridge.embedded) {
+      const open = await Promise.race([accountP, sleep(2500).then(() => 'late')]);
+      late = open === 'late';
+      let rec = !late && open ? open : null;
+      // no site asked for and nothing in this browser: open the account's latest site
+      if (!rec && !late && !had && state.account && state.account.sites.length) { try { rec = (await bridge.get(state.account.sites[0].id)).site; } catch (e) { /* demo instead */ } }
+      if (rec) { try { fromAccount = await applyAccountRecordEarly(rec); } catch (e) { console.warn('account site', e); } }
+    }
+    state.firstRun = !had && !fromAccount && !(siteConfig && siteConfig.scene);
+    if (!had && !fromAccount && !(siteConfig && siteConfig.scene)) demoScene();
+    if (late) accountP.then(open => { if (open) whenBooted(() => openAccountSite(open.id, open)); });
+    accountP.then(() => { if (state.account) whenBooted(() => setTimeout(offerImport, 1500)); });
     $('#site-lat').value = state.site.lat.toFixed(6); $('#site-lon').value = state.site.lon.toFixed(6);
     wire(); initSetup(); initAdmin(); buildModelPane2(); renderSiteFacts(); updateSiteSearchAvailability();
     if (window.ArienPlanner) ArienPlanner.init(plannerApi());

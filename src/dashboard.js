@@ -158,12 +158,13 @@
       <div class="db-chart tall"><canvas id="db-monthly-chart"></canvas></div>`;
   }
   function sitesHtml() {
-    const list = api.listSites();
-    if (!list.length) return '<p class="hint">No saved sites yet. Save a design in the Design view or the Site panel.</p>';
-    return `<ul class="site-list">${list.map(x => {
-      const arrs = x.snap.arrays || [], n = arrs.reduce((t, a) => t + a.rows * a.cols, 0), kwp = arrs.reduce((t, a) => t + api.PN.arrayKwp(a), 0);
-      const d = new Date(x.savedAt), place = (x.snap.site && x.snap.site.name || '').split(',').slice(0, 2).join(',');
-      return `<li><div class="sl-main"><b>${api.escapeHtml(x.name)}</b><small>${api.escapeHtml(place)} · ${n} panels · ${num(kwp, 2)} kWp · saved ${d.getDate()} ${api.MONTHS[d.getMonth()]} ${d.getFullYear()}</small></div>
+    const list = api.listSites(), acct = S.account;
+    const note = acct ? `<p class="hint">In your ARIEN account${acct.user.first_name ? ' (' + api.escapeHtml(acct.user.first_name) + ')' : ''}: the same sites as on arien.base44.app, on every device you sign in on.</p>` : '';
+    if (!list.length) return note + '<p class="hint">No saved sites yet. Save a design in the Design view or the Site panel.</p>';
+    return `${note}<ul class="site-list">${list.map(x => {
+      const n = x.panels, kwp = x.kwp, d = new Date(x.savedAt), place = x.place || '';
+      const when = isFinite(d) ? ` · saved ${d.getDate()} ${api.MONTHS[d.getMonth()]} ${d.getFullYear()}` : '';
+      return `<li><div class="sl-main"><b>${api.escapeHtml(x.name)}</b><small>${place ? api.escapeHtml(place) + ' · ' : ''}${n} panels · ${num(kwp, 2)} kWp${when}${acct && !x.twin ? ' · made in the web designer' : ''}</small></div>
         <div class="sl-act"><button class="btn" data-open="${x.id}" data-view="design">Edit design</button><button class="btn" data-open="${x.id}" data-view="twin">Open in 3D</button><button class="icon-btn danger" data-del="${x.id}" title="Delete"><svg><use href="#i-trash"/></svg></button></div></li>`;
     }).join('')}</ul>`;
   }
@@ -278,6 +279,8 @@
   }
 
   root.ArienDashboard = {
+    /** The saved-site list changed (account sync): redraw if the dashboard is showing */
+    rerender() { if (S && S.view === 'dashboard' && !busy) render(); },
     init(a) { api = a; S = a.state; F = root.ArienFinance; $$('#dashboard [data-goto]').forEach(btn => { btn.onclick = () => api.setView(btn.dataset.goto); }); },
     show() {
       render();
