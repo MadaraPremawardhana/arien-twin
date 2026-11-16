@@ -1,6 +1,6 @@
 // Shared helpers: settings, site-relative URLs, storage that never throws, toasts.
 export const CONFIG = Object.assign({
-  appId: '', apiBase: '', authBase: '', twinUrl: ''
+  appId: '', apiBase: '', authBase: '', ssoRelay: '', contactEmail: '', twinUrl: ''
 }, window.ARIEN_CONFIG || {});
 
 /** The site's root URL, whatever folder it is served from (pages carry data-root="./" or "../"). */

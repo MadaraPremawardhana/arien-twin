@@ -34,6 +34,8 @@ button[disabled] { cursor: default; }
 @media (min-width: 1024px) { .st .mobile-menu { display: none !important; } }
 
 /* ---- hero: forecast card details ---- */
+.st #fc-map { position: relative; z-index: 0; isolation: isolate; }   /* keeps Leaflet's layers under the sticky header */
+.st section[tabindex="-1"]:focus { outline: none; }
 .st .fcard .leaflet-container { width: 100%; height: 100%; font-family: var(--fb); }
 .st .fcard .mini-pin { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid #16132B; box-shadow: 0 0 0 4px rgba(255, 200, 61, .35); }
 .st .fcard .leaflet-control-attribution { font-size: 8px; }

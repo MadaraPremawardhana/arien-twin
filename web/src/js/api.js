@@ -80,12 +80,21 @@ export const auth = {
   resendOtp: (email) => call('POST', `${app()}/auth/resend-otp`, { body: { email } }),
   resetPasswordRequest: (email) => call('POST', `${app()}/auth/reset-password-request`, { body: { email } }),
   resetPassword: (resetToken, newPassword) => call('POST', `${app()}/auth/reset-password`, { body: { reset_token: resetToken, new_password: newPassword } }),
-  /** Google sign-in runs on the account service and comes back to `returnPath` with the token in the address, which the page's first script stores and removes. */
-  googleUrl(returnPath = '') {
-    return `${CONFIG.authBase}/api/apps/auth/login?app_id=${encodeURIComponent(CONFIG.appId)}&from_url=${encodeURIComponent(url(returnPath))}`;
+  /**
+   * Start a Google sign-in. The account service only returns to its own app's address ("Domain is not valid" otherwise),
+   * so it returns to the relay page there, which sends the browser back to this site's home page with the session in
+   * the address fragment. The page's first script stores it, removes it from the address and goes on to `returnPath`.
+   */
+  startGoogle(returnPath = '') {
+    try { sessionStorage.setItem('arien:after-login', returnPath || ''); } catch (e) { /* lands on the home page instead */ }
+    location.href = `${CONFIG.authBase}/api/apps/auth/login?app_id=${encodeURIComponent(CONFIG.appId)}&from_url=${encodeURIComponent(CONFIG.ssoRelay || url(''))}`;
   },
   signOut() { clearSession(); mePromise = null; }
 };
+
+/** Send an email through the app's built-in sender (it only delivers to people who have signed up to the app). */
+export const sendEmail = ({ to, subject, body, from_name = 'ARIEN website' }) =>
+  call('POST', `${app()}/integration-endpoints/Core/SendEmail`, { body: { to, subject, body, from_name } });
 
 // What the nav needs straight away on the next page load (no token, nothing sensitive beyond name, email and plan).
 function slim(u) { return u ? { id: u.id, full_name: u.full_name, email: u.email, plan: u.plan, last_site_id: u.last_site_id, settings: u.settings || {} } : null; }

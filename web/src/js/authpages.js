@@ -27,7 +27,7 @@ function keepQuery() {
 }
 function wireGoogle() {
   const b = [...document.querySelectorAll('button')].find(x => /Continue with Google/.test(x.textContent));
-  if (b) b.addEventListener('click', () => { location.href = auth.googleUrl(destination()); });
+  if (b) b.addEventListener('click', () => auth.startGoogle(destination()));
 }
 
 export function startLogin() {

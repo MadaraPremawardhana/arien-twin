@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the ARIEN web app into static files that any web host can serve (GitHub Pages, Netlify, S3 …).
 
-    npm install        # once: esbuild, globe.gl, three, leaflet, suncalc
+    npm install        # once: esbuild, three, leaflet, suncalc
     python3 build.py   # src/ -> index.html, <page>/index.html, assets/
 
 Pages are plain HTML from src/pages with the shared header and footer. Links are relative, so the site works from
@@ -43,12 +43,16 @@ LAYOUTS = {
     'bare':  '{{body}}',
 }
 
-# Runs before first paint: takes the token a Google sign-in returns in the address (and removes it from the address),
+# Runs before first paint: takes the session a Google sign-in returns in the address (fragment or query) and removes
+# it from the address, goes on to the page the user was heading for (a plain "page/?query" path saved before leaving),
 # marks the page signed in or out, sends signed-out visitors of account pages to the log-in page, and sets the sky
 # theme from the pinned choice, the last computed phase (under 30 minutes old) or the clock.
-HEAD_SCRIPT = """(function(){var d=document.documentElement,g=function(k){try{return localStorage.getItem(k)}catch(e){return null}};
-try{var u=new URL(location.href),t=u.searchParams.get('access_token');if(t){try{localStorage.setItem('base44_access_token',t)}catch(e){}}
-if(t||u.searchParams.has('is_new_user')){u.searchParams.delete('access_token');u.searchParams.delete('is_new_user');history.replaceState(null,'',u.pathname+u.search+u.hash)}}catch(e){}
+HEAD_SCRIPT = r"""(function(){var d=document.documentElement,g=function(k){try{return localStorage.getItem(k)}catch(e){return null}};
+try{var u=new URL(location.href),t=u.searchParams.get('access_token'),f=/^#(.*&)?access_token=/.test(u.hash)?new URLSearchParams(u.hash.slice(1)):null;if(f){t=f.get('access_token');u.hash=''}
+if(t){try{localStorage.setItem('base44_access_token',t)}catch(e){}}
+if(t||u.searchParams.has('is_new_user')){u.searchParams.delete('access_token');u.searchParams.delete('is_new_user');history.replaceState(null,'',u.pathname+u.search+u.hash)}
+if(t){var r=null;try{r=sessionStorage.getItem('arien:after-login');sessionStorage.removeItem('arien:after-login')}catch(e){}
+if(r&&/^[a-z][a-z0-9-]*\/(\?[^#]*)?$/i.test(r)){location.replace(d.dataset.root+r);return}}}catch(e){}
 var a=!!g('base44_access_token');d.dataset.auth=a?'in':'out';%GUARD%
 var h=new Date().getHours(),p=h>=5&&h<8?'dawn':h>=8&&h<17?'day':h>=17&&h<20?'dusk':'night',m=g('arien:theme');
 try{var c=JSON.parse(g('arien:phase')||'null');if(c&&Date.now()-c.t<18e5)p=c.phase}catch(e){}
@@ -97,13 +101,13 @@ def build_assets():
     if not nm.exists():
         sys.exit('node_modules is missing: run "npm install" in web/ first.')
     subprocess.run([str(nm / '.bin' / 'esbuild'), 'src/js/app.js', '--bundle', '--format=esm', '--splitting', '--minify', '--target=es2020',
-                    '--outdir=assets', '--chunk-names=chunks/[name]-[hash]', '--legal-comments=linked', '--log-level=warning'], cwd=ROOT, check=True)
+                    '--outdir=assets', '--chunk-names=chunks/[name]-[hash]', '--loader:.glsl=text', '--legal-comments=linked', '--log-level=warning'], cwd=ROOT, check=True)
     leaflet = (nm / 'leaflet' / 'dist' / 'leaflet.css').read_text()
     leaflet = re.sub(r'url\(images/[^)]*\)', 'none', leaflet)   # default marker and layer-control images are not used
     css = (SRC / 'css' / 'captured.css').read_text() + '\n/* ---- Leaflet 1.9 (BSD-2-Clause) ---- */\n' + leaflet + '\n' + (SRC / 'css' / 'extra.css').read_text()
     (ASSETS / 'site.css').write_text(css)
-    for img in ('earth-day.jpg', 'earth-night.jpg'):   # NASA Blue Marble / Black Marble textures shipped with three-globe (MIT)
-        shutil.copyfile(nm / 'three-globe' / 'example' / 'img' / img, ASSETS / img)
+    for img in ('day.jpg', 'night.jpg'):   # the Earth textures supplied with ARIEN's globe (from the three.js examples)
+        shutil.copyfile(SRC / 'globe' / 'textures' / img, ASSETS / ('earth-' + img))
     mark = (SRC / 'partials' / 'mark.html').read_text().strip().replace(' class="mark"', ' xmlns="http://www.w3.org/2000/svg"').replace(' aria-hidden="true"', '')
     (ASSETS / 'favicon.svg').write_text(mark + '\n')
     h = hashlib.sha1()

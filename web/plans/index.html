@@ -10,11 +10,11 @@
 <meta property="og:type" content="website">
 <meta name="theme-color" content="#16132B">
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
-<script>(function(){var d=document.documentElement,g=function(k){try{return localStorage.getItem(k)}catch(e){return null}};try{var u=new URL(location.href),t=u.searchParams.get('access_token');if(t){try{localStorage.setItem('base44_access_token',t)}catch(e){}}if(t||u.searchParams.has('is_new_user')){u.searchParams.delete('access_token');u.searchParams.delete('is_new_user');history.replaceState(null,'',u.pathname+u.search+u.hash)}}catch(e){}var a=!!g('base44_access_token');d.dataset.auth=a?'in':'out';var h=new Date().getHours(),p=h>=5&&h<8?'dawn':h>=8&&h<17?'day':h>=17&&h<20?'dusk':'night',m=g('arien:theme');try{var c=JSON.parse(g('arien:phase')||'null');if(c&&Date.now()-c.t<18e5)p=c.phase}catch(e){}d.dataset.phase=m==='day'||m==='night'?m:p})();</script>
+<script>(function(){var d=document.documentElement,g=function(k){try{return localStorage.getItem(k)}catch(e){return null}};try{var u=new URL(location.href),t=u.searchParams.get('access_token'),f=/^#(.*&)?access_token=/.test(u.hash)?new URLSearchParams(u.hash.slice(1)):null;if(f){t=f.get('access_token');u.hash=''}if(t){try{localStorage.setItem('base44_access_token',t)}catch(e){}}if(t||u.searchParams.has('is_new_user')){u.searchParams.delete('access_token');u.searchParams.delete('is_new_user');history.replaceState(null,'',u.pathname+u.search+u.hash)}if(t){var r=null;try{r=sessionStorage.getItem('arien:after-login');sessionStorage.removeItem('arien:after-login')}catch(e){}if(r&&/^[a-z][a-z0-9-]*\/(\?[^#]*)?$/i.test(r)){location.replace(d.dataset.root+r);return}}}catch(e){}var a=!!g('base44_access_token');d.dataset.auth=a?'in':'out';var h=new Date().getHours(),p=h>=5&&h<8?'dawn':h>=8&&h<17?'day':h>=17&&h<20?'dusk':'night',m=g('arien:theme');try{var c=JSON.parse(g('arien:phase')||'null');if(c&&Date.now()-c.t<18e5)p=c.phase}catch(e){}d.dataset.phase=m==='day'||m==='night'?m:p})();</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;800&amp;family=Manrope:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap">
-<link rel="stylesheet" href="../assets/site.css?v=8f09a02e">
+<link rel="stylesheet" href="../assets/site.css?v=49faf508">
 </head>
 <body data-page="plans">
 <div class="st" style="min-height: 100vh;">
@@ -111,7 +111,7 @@
 <div style="text-align: center; margin-top: 40px;"><a class="btn btn-ghost when-in" href="../dashboard/">← Back to Dashboard</a><a class="btn btn-ghost when-out" href="../">← Back to home</a></div>
 </div>
 </div>
-<script src="../config.js?v=8f09a02e"></script>
-<script type="module" src="../assets/app.js?v=8f09a02e"></script>
+<script src="../config.js?v=49faf508"></script>
+<script type="module" src="../assets/app.js?v=49faf508"></script>
 </body>
 </html>

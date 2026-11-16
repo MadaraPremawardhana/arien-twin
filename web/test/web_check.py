@@ -30,7 +30,7 @@ def check(name, cond, detail=''):
 class Backend:
     """An in-memory stand-in for the account service: users, tokens, SolarSite and the three form entities."""
     def __init__(self):
-        self.users = {}; self.tokens = {}; self.sites = []; self.leads = []; self.waitlist = []; self.academic = []; self.pending = {}; self.calls = []; self.n = 0
+        self.users = {}; self.tokens = {}; self.sites = []; self.leads = []; self.waitlist = []; self.academic = []; self.pending = {}; self.calls = []; self.emails = []; self.google = []; self.n = 0
     def add_user(self, email, password, **kw):
         u = {'id': 'u%d' % (len(self.users) + 1), 'email': email, 'full_name': kw.get('full_name', ''), 'plan': kw.get('plan'), 'settings': {}, 'last_site_id': None, '_pw': password}
         self.users[email] = u; return u
@@ -55,6 +55,7 @@ class Backend:
             if body.get('otp_code') != '424242' or body.get('email') not in self.pending: return send(400, {'message': 'Invalid verification code'})
             usr = self.add_user(body['email'], self.pending.pop(body['email'])); return send(200, {'access_token': self.token_for(usr)})
         if path == '/auth/resend-otp' or path == '/auth/reset-password-request': return send(200, {'ok': True})
+        if path == '/integration-endpoints/Core/SendEmail': self.emails.append(body); return send(200, {'success': True})
         if path == '/entities/User/me':
             if not me: return send(401, {'message': 'Authentication required to view users'})
             if req.method == 'PUT': me.update({k: v for k, v in body.items() if k in ('settings', 'plan', 'last_site_id')})
@@ -109,6 +110,13 @@ def router(backend):
             if rel == 'config.json': return r.fulfill(status=200, body=json.dumps(TWIN_CONFIG), headers={'content-type': 'application/json'})
             if rel in ('', 'index.html'): return r.fulfill(status=200, body=twin_html, headers={'content-type': 'text/html'})
             return r.fulfill(status=404, body='not found')
+        if u.netloc == 'arien.base44.app' and u.path == '/api/apps/auth/login':   # Google sign-in: only returns to its own app's address
+            q = up.parse_qs(u.query); backend.google.append(q)
+            if not q['from_url'][0].startswith('https://arien.base44.app/'): return r.fulfill(status=400, body=json.dumps({'error_type': 'HTTPException', 'message': 'Domain is not valid'}), headers={'content-type': 'application/json'})
+            return r.fulfill(status=302, headers={'location': q['from_url'][0] + '?access_token=' + backend.token_for(backend.users[backend.google_user])})
+        if u.netloc == 'arien.base44.app' and u.path == '/sso-return':            # the relay page of the Base44 app: on to this site, session in the fragment
+            tok = up.parse_qs(u.query)['access_token'][0]
+            return r.fulfill(status=200, body='<script>location.replace(%s)</script>' % json.dumps(SITE + '#access_token=' + tok), headers={'content-type': 'text/html'})
         if u.netloc == 'arien.base44.app': return backend.handle(r)
         if u.netloc in ('fonts.googleapis.com', 'fonts.gstatic.com'): return r.fulfill(status=200, body='', headers={'content-type': 'text/css'})
         if u.netloc == 'nominatim.openstreetmap.org':
@@ -199,6 +207,17 @@ with sync_playwright() as p:
     g = page.evaluate('() => { const c = document.querySelector(".globe-stage canvas"), s = document.querySelector(".globe-stage"); return { canvas: c.clientWidth, stage: s.clientWidth, placeholder: !!document.querySelector(".globe-placeholder") }; }')
     check('globe drawn, sized to its stage', abs(g['canvas'] / g['stage'] - 1.22) < 0.03 and not g['placeholder'], json.dumps(g))
     page.wait_for_timeout(1000 * 1.5); page.screenshot(path=str(OUT / '01-home-desktop.png'))
+    m = page.evaluate('''() => { const map = document.querySelector('#fc-map'), r = map.getBoundingClientRect(); scrollBy(0, r.top - 20); const r2 = map.getBoundingClientRect();
+        const el = document.elementFromPoint(r2.left + r2.width / 2, 40); return { top: Math.round(r2.top), inHeader: !!(el && el.closest('header.nav')), what: el && (el.className || el.tagName).toString().slice(0, 40) }; }''')
+    check('the preview map passes under the sticky header, not over it', m['inHeader'] and m['top'] < 40, json.dumps(m))
+    page.evaluate('() => scrollTo(0, 0)'); page.wait_for_timeout(200)
+    page.evaluate('() => { window.__ys = []; addEventListener("scroll", () => window.__ys.push(Math.round(scrollY))); }')
+    page.click('.nav-links a[href$="#pricing"]')
+    settle(page, '() => document.activeElement && document.activeElement.id === "pricing"')
+    ys = page.evaluate('() => window.__ys'); mid = len(set(ys))   # in-between positions, always moving down: a glide, not a jump (few frames in this software-rendered browser)
+    sc = page.evaluate('() => { const h = document.querySelector("header.nav").offsetHeight, t = document.querySelector("#pricing .sec-head").getBoundingClientRect().top; return { gap: Math.round(t - h), y: Math.round(scrollY), hash: location.hash }; }')
+    check('menu link glides to the section title, just under the header', mid >= 3 and ys == sorted(ys) and abs(sc['gap'] - 20) <= 2 and sc['hash'] == '#pricing', json.dumps({'steps': mid, **sc}))
+    page.evaluate('() => scrollTo(0, 0)'); page.wait_for_timeout(200)
     page.fill('#loc-input', 'Sydney'); page.click('#loc-go'); settle(page, '() => document.documentElement.dataset.phase === "night"')
     check('searching Sydney at midday UTC turns the sky to night', True)
     page.screenshot(path=str(OUT / '02-home-night.png'))
@@ -317,8 +336,20 @@ with sync_playwright() as p:
     page.fill('[name=name]', 'Ada Lovelace'); page.fill('[name=organisation]', 'Sunrise Energy Ltd'); page.fill('[name=num_sites]', '12'); page.select_option('[name=use_case]', 'grid')
     settle(page, '() => document.querySelector("[name=email]").value'); page.click('#contact-form button[type=submit]')
     settle(page, '() => /reply within 2 working days/.test(document.body.textContent)')
+    to = re.search(r"contactEmail: '([^']+)'", (WEB / 'config.js').read_text()).group(1)
+    mail = [e for e in be.emails if 'enquiry' in e.get('subject', '')]
+    check('the enquiry is emailed to the address in config.js', len(mail) == 1 and mail[0]['to'] == to and 'Ada Lovelace (Sunrise Energy Ltd)' in mail[0]['subject'] and 'Sunrise Energy Ltd' in mail[0]['body'] and 'grid' in mail[0]['body'], mail[0]['subject'] if mail else 'none')
+    check('waitlist and academic applications are emailed too', sum('waitlist' in e['subject'] for e in be.emails) == 1 and sum('academic application' in e['subject'] for e in be.emails) == 1 and all(e['to'] == to for e in be.emails))
     check('contact form saves a sales lead', be.leads and be.leads[0]['num_sites'] == 12 and be.leads[0]['use_case'] == 'grid' and be.leads[0]['organisation'] == 'Sunrise Energy Ltd', json.dumps(be.leads[:1])[:200])
-    # a Google sign-in comes back with the token in the address: it is stored and removed from the address
+    # Continue with Google: out through the account service, back through the Base44 relay page, on to the page asked for
+    page.evaluate('() => localStorage.clear()'); be.google_user = 'new.user@example.test'
+    page.goto(SITE + 'login/?returnTo=' + up.quote('settings/', safe='')); settle(page, '() => document.querySelector("#password")')
+    page.click('text=Continue with Google')
+    settle(page, '() => location.pathname.endsWith("/settings/") && document.documentElement.dataset.auth === "in"', 20000)
+    gq = be.google[-1]
+    check('Google sign-in returns through the Base44 relay page and lands on the page asked for', gq['from_url'] == ['https://arien.base44.app/sso-return'] and gq['app_id'] == ['6a4fb7864ffb55c91635b7d7'] and 'access_token' not in page.url
+          and page.evaluate('() => !!localStorage.getItem("base44_access_token") && sessionStorage.getItem("arien:after-login") === null'), page.url)
+    # the older form, with the token in the query, is still accepted and cleaned
     page.evaluate('() => localStorage.clear()')
     tok = be.token_for(be.users['new.user@example.test'])
     page.goto(SITE + 'twin/?access_token=' + tok + '&is_new_user=false'); settle(page, '() => document.documentElement.dataset.auth === "in"')

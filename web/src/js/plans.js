@@ -2,6 +2,7 @@
 import { $, $$, go } from './core.js';
 import { auth, signedIn, Waitlist, AcademicApplication } from './api.js';
 import { openModal, doneHtml } from './modal.js';
+import { notifyTeam } from './notify.js';
 
 const ACADEMIC_DOMAINS = ['.ac.uk', '.edu', '.edu.au', '.ac.lk', '.ac.in', '.ac.nz', '.ac.za'];
 const isAcademic = (email) => ACADEMIC_DOMAINS.some(d => String(email || '').trim().toLowerCase().endsWith(d));
@@ -21,6 +22,7 @@ async function waitlist() {
     e.preventDefault(); const btn = $('button[type=submit]', f), err = $('.modal-err', f); err.hidden = true; busy(btn, true, 'Joining…');
     try {
       await Waitlist.create({ name: f.elements.name.value, email: f.elements.email.value, organisation: f.elements.organisation.value, interest: 'Pro / Installer' });
+      notifyTeam(`ARIEN Pro / Installer waitlist: ${f.elements.name.value}`, [['Name', f.elements.name.value], ['Email', f.elements.email.value], ['Organisation', f.elements.organisation.value]]).catch(() => {});
       $('.modal-body', d).innerHTML = doneHtml("You're on the list", "We'll email you as soon as Pro / Installer seats open up.");
     } catch (x) { err.textContent = x.message || 'Could not join the waitlist. Please try again.'; err.hidden = false; busy(btn, false, 'Join the waitlist'); }
   });
@@ -41,6 +43,8 @@ async function academic() {
       const ok = isAcademic(f.elements.email.value);
       await AcademicApplication.create({ name: f.elements.name.value, institution: f.elements.institution.value, email: f.elements.email.value, research_use: f.elements.research_use.value, status: ok ? 'approved' : 'pending' });
       if (ok) { await auth.updateMe({ plan: 'Academic' }); await auth.me({ fresh: true }).catch(() => {}); }
+      notifyTeam(`ARIEN academic application (${ok ? 'approved automatically' : 'needs review'}): ${f.elements.name.value}`, [['Name', f.elements.name.value], ['Institution', f.elements.institution.value],
+        ['Email', f.elements.email.value], ['Research use', f.elements.research_use.value]]).catch(() => {});
       $('.modal-body', d).innerHTML = ok
         ? doneHtml('Approved — Academic access activated', 'Your academic email was recognised, so your account has been upgraded to the Academic plan.')
         : doneHtml('Application received', "We'll review your application and reply within 2 working days.", false);
