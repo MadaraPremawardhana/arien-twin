@@ -1787,6 +1787,13 @@ void main() {
     if (up()) { fn(); return; }
     const iv = setInterval(() => { if (up()) { clearInterval(iv); fn(); } }, 300);
   }
+  /** A place to start a new design at, from the address: ?lat=51.99&lon=-0.99&q=Buckingham (ignored when ?site= asks for a saved site) */
+  function startPlace() {
+    const q = new URLSearchParams(location.search); if (q.get('site')) return null;
+    const lat = parseFloat(q.get('lat')), lon = parseFloat(q.get('lon') ?? q.get('lng'));
+    if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+    return { lat, lon, name: (q.get('q') || '').slice(0, 120) || undefined };
+  }
   /** Ask the page around the twin for the signed-in account. Resolves with the record it wants open, or null. */
   async function accountConnect() {
     if (!bridge.embedded) return null;
@@ -2108,6 +2115,7 @@ void main() {
   function setView(v) {
     if (v === state.view) return;
     state.view = v;
+    if (state.account && bridge.notify) bridge.notify('view', { view: v });
     const flat = v === 'design' || v === 'dashboard';
     document.body.classList.toggle('view-design', v === 'design');
     document.body.classList.toggle('view-dashboard', v === 'dashboard');
@@ -2665,12 +2673,13 @@ void main() {
     siteConfig = await fetchSiteConfig();
     if (siteConfig) applySiteConfig(siteConfig, had);
     let fromAccount = false, late = false;
+    const start = startPlace();
     if (bridge.embedded) {
       const open = await Promise.race([accountP, sleep(2500).then(() => 'late')]);
       late = open === 'late';
       let rec = !late && open ? open : null;
       // no site asked for and nothing in this browser: open the account's latest site
-      if (!rec && !late && !had && state.account && state.account.sites.length) { try { rec = (await bridge.get(state.account.sites[0].id)).site; } catch (e) { /* demo instead */ } }
+      if (!rec && !late && !had && !start && state.account && state.account.sites.length) { try { rec = (await bridge.get(state.account.sites[0].id)).site; } catch (e) { /* demo instead */ } }
       if (rec) { try { fromAccount = await applyAccountRecordEarly(rec); } catch (e) { console.warn('account site', e); } }
     }
     state.firstRun = !had && !fromAccount && !(siteConfig && siteConfig.scene);
@@ -2683,6 +2692,8 @@ void main() {
     if (window.ArienDashboard) ArienDashboard.init(dashboardApi());
     renderSavedSites(); renderResults();
     if (location.hash === '#design' || location.hash === '#dashboard') { const v = location.hash.slice(1); const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); setView(v); } }, 300); }
+    window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (v === 'design' || v === 'dashboard') whenBooted(() => setView(v)); });
+    if (start) whenBooted(async () => { await goToSite(start.lat, start.lon, start.name); state.accountSiteId = null; state.accountDirty = false; if (state.view === 'design' && window.ArienPlanner) ArienPlanner.focusDesign(); });
     if (location.hash === '#admin') { const go = () => openDrawer('admin'); const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); go(); } }, 400); }
     window.__arien = { state, viewer: () => viewer, setTraces, hitterLabel, traceLayer: () => traceLayer, designChanged, rebuild: () => { geoms.clear(); rebuildAll(); }, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef, setView, forecastWeek, estimateYield, designSummary, flyToDesign, designBounds,
       quickShadingLoss, saveNamedSite, listSites, openNamedSite, searchPlaces, suggestedName,

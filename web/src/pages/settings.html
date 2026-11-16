@@ -1,0 +1,17 @@
+<div class="settings">
+<span class="eyebrow">Account</span><h1 style="margin-top: 10px;">Settings</h1>
+<div class="panel"><div class="ph"><h3>Profile</h3><span class="saved" id="set-saved" aria-live="polite"></span></div><div class="pb">
+<div class="row"><div><div class="rl"><label for="set-name">Display name</label></div><div class="rd">Shown in the menu and in your digital twin.</div></div><input type="text" id="set-name" autocomplete="name" maxlength="80"></div>
+<div class="row"><div><div class="rl">Email</div><div class="rd mono" id="set-email"></div></div></div>
+</div></div>
+<div class="panel"><div class="ph"><h3>Appearance</h3></div><div class="pb">
+<div class="row"><div><div class="rl"><label for="set-theme">Sky theme</label></div><div class="rd">By default the colours follow the sun where your site is: dawn, day, dusk and night.</div></div>
+<select id="set-theme"><option value="auto">Auto by sun</option><option value="day">Always day</option><option value="night">Always night</option></select></div>
+</div></div>
+<div class="panel"><div class="ph"><h3>Plan</h3></div><div class="pb">
+<div class="row"><div><div class="rl" id="set-plan">—</div><div class="rd" id="set-sites"></div></div><a class="btn btn-primary" href="{{root}}plans/">Manage plan</a></div>
+</div></div>
+<div class="panel"><div class="ph"><h3>Session</h3></div><div class="pb">
+<div class="row"><div><div class="rl">Sign out</div><div class="rd">Signs this browser out. Your sites stay in your account.</div></div><button class="btn btn-ghost" data-signout>Sign out</button></div>
+</div></div>
+</div>

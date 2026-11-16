@@ -1,9 +1,9 @@
 /**
  * ARIEN account bridge.
- * Inside the ARIEN web app (arien.base44.app) the twin keeps saved sites and results in the signed-in user's account
- * (the web app's SolarSite records). The page around the twin does every read and write under the account's access
+ * Inside the ARIEN web app (the web/ frontend in this repository, or arien.base44.app) the twin keeps saved sites and
+ * results in the signed-in user's account (the app's SolarSite records). The page around the twin does every read and write under the account's access
  * rules; the twin only exchanges postMessage messages with that page, so no password, token or email reaches the twin.
- * Opened on its own (github.io), nothing here runs and sites stay in this browser.
+ * Opened on its own, nothing here runs and sites stay in this browser.
  *
  * Messages: {source:'arien-twin', v:1, id, type, ...} → page; page → {source:'arien-base44', id, type, ...}.
  * The web app uses `id` both to pair a reply with its request and as the site's record id, so requests go one at a
@@ -11,7 +11,9 @@
  */
 (function (root) {
   'use strict';
-  const PARENTS = ['https://arien.base44.app'];
+  // Pages allowed to host the twin and keep its sites: the web/ frontend (served from this GitHub Pages origin) and the
+  // Base44 app. Add the site's own domain here when the frontend moves to one.
+  const PARENTS = ['https://madarapremawardhana.github.io', 'https://arien.base44.app'];
   const SRC = 'arien-twin', PARENT_SRC = 'arien-base44', VERSION = 1;
   const MAX_BYTES = 480 * 1024; // the page refuses messages over 500 KB
   const M_PER_DEG = 111320, D2R = Math.PI / 180;
@@ -239,6 +241,8 @@
     }
     return {
       embedded, get origin() { return origin; }, request,
+      /** Tell the page something without waiting for an answer (only once it has answered hello) */
+      notify(type, body = {}) { if (embedded && origin) { try { win.parent.postMessage({ ...body, source: SRC, v: VERSION, type }, origin); } catch (e) { /* ignore */ } } },
       hello: (site) => request('hello', site ? { site } : {}, { ms: 5000 }),
       list: () => request('site.list'),
       get: (id) => request('site.get', {}, { siteId: id }),

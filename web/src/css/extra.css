@@ -1,0 +1,79 @@
+/* Additions for the static build: signed-in / signed-out states, menus, dialogs, the account pages and the twin host page. */
+
+/* ---- signed-in / signed-out (html[data-auth] is set before first paint) ---- */
+[data-auth="out"] .when-in, [data-auth="in"] .when-out { display: none !important; }
+
+/* ---- utilities the capture missed (focus rings, error boxes, spinner) ---- */
+.focus-visible\:outline-none:focus-visible { outline: 2px solid transparent; outline-offset: 2px; }
+.focus-visible\:ring-1:focus-visible { box-shadow: 0 0 0 1px hsl(var(--ring)); }
+.mb-4 { margin-bottom: 1rem; } .mt-4 { margin-top: 1rem; } .p-3 { padding: .75rem; }
+.bg-destructive\/10 { background-color: hsl(var(--destructive) / .1); }
+.text-destructive { color: hsl(var(--destructive)); }
+.bg-leaf\/10 { background-color: rgba(30, 158, 106, .1); } .text-leaf { color: #12734A; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.animate-spin { animation: spin 1s linear infinite; }
+.spinner { width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; animation: spin .8s linear infinite; flex: none; }
+button[disabled] { cursor: default; }
+.st .btn[disabled] { opacity: .65; pointer-events: none; }
+.otp-input { letter-spacing: .5em; text-align: center; font-family: var(--font-mono); font-size: 1.25rem !important; padding-left: .5em !important; }
+.auth-link-btn { background: none; border: 0; padding: 0; cursor: pointer; }
+
+/* ---- nav: links styled as the original's buttons ---- */
+.st .seg a.seg-btn { font-family: var(--fb); font-size: 13px; font-weight: 700; color: var(--ink-2); padding: 6px 14px; border-radius: 999px; cursor: pointer; }
+.st .seg a.seg-btn.on { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px #0e22381a; }
+.st .nav .seg a.seg-btn { color: #ffffffd1; }
+.st .nav .seg a.seg-btn.on { background: #fff; color: #16132b; box-shadow: 0 2px 8px #00000047; }
+.st .avatar { border: 0; cursor: pointer; }
+.st .acct-menu { position: absolute; right: 0; top: calc(100% + 8px); background: #fff; border: 1px solid #E6EAEF; border-radius: 12px; box-shadow: 0 4px 12px rgba(14, 34, 56, .12), 0 24px 48px rgba(14, 34, 56, .10); min-width: 190px; z-index: 200; overflow: hidden; }
+.st .acct-head { padding: 10px 16px; border-bottom: 1px solid #EEF1F5; }
+.st .acct-name { font-family: var(--fd); font-weight: 600; font-size: 14px; color: #0E2238; }
+.st .acct-email { font-family: var(--fm); font-size: 11.5px; color: #7C8A9B; margin-top: 2px; overflow-wrap: anywhere; }
+.st .acct-menu a, .st .acct-menu button { display: block; width: 100%; text-align: left; padding: 11px 16px; background: none; border: 0; font-size: 14px; color: #0E2238; cursor: pointer; font-family: var(--fb); transition: background .1s; }
+.st .acct-menu a:hover, .st .acct-menu button:hover { background: #F5F7FA; }
+.st .acct-menu[hidden], .st .mobile-menu[hidden], .st .loc-chip[hidden] { display: none; }
+@media (min-width: 1024px) { .st .mobile-menu { display: none !important; } }
+
+/* ---- hero: forecast card details ---- */
+.st .fcard .leaflet-container { width: 100%; height: 100%; font-family: var(--fb); }
+.st .fcard .mini-pin { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid #16132B; box-shadow: 0 0 0 4px rgba(255, 200, 61, .35); }
+.st .fcard .leaflet-control-attribution { font-size: 8px; }
+
+/* ---- dialogs (waitlist, academic access) ---- */
+dialog.modal { border: 1px solid #E6EAEF; border-radius: 16px; padding: 24px; width: min(32rem, calc(100vw - 32px)); background: #fff; color: #0E2238; box-shadow: 0 24px 48px rgba(0, 0, 0, .3); font-family: "Manrope", system-ui, sans-serif; }
+dialog.modal::backdrop { background: rgba(9, 6, 23, .6); }
+dialog.modal h2 { font-family: "Unbounded", system-ui, sans-serif; font-weight: 700; font-size: 18px; letter-spacing: -.01em; line-height: 1.2; color: #0E2238; padding-right: 28px; }
+dialog.modal .modal-desc { color: #6E6A85; font-size: 14px; margin: 6px 0 18px; line-height: 1.5; }
+dialog.modal .modal-x { position: absolute; right: 14px; top: 14px; width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: #6E6A85; }
+dialog.modal .modal-x:hover { background: #F5F7FA; color: #0E2238; }
+dialog.modal form { display: flex; flex-direction: column; gap: 14px; }
+dialog.modal label { font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #7C8A9B; display: block; margin-bottom: 5px; }
+dialog.modal input, dialog.modal textarea { width: 100%; border: 1px solid #E6EAEF; border-radius: 10px; padding: 10px 13px; font-size: 14px; outline: none; box-sizing: border-box; }
+dialog.modal input:focus-visible, dialog.modal textarea:focus-visible { border-color: #16132B; }
+dialog.modal .modal-err { color: #C2410C; font-size: 13px; font-family: "JetBrains Mono", ui-monospace, monospace; }
+dialog.modal .btn { font-family: "Manrope", system-ui, sans-serif; font-weight: 700; font-size: 14px; border-radius: 999px; padding: 11px 18px; border: 1.5px solid transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; background: var(--accent, #FFC83D); color: #16132b; box-shadow: inset 0 1px #ffffff73, 0 6px #0000002e, 0 14px 24px #00000040; }
+dialog.modal .modal-done { text-align: center; padding: 14px 6px 4px; }
+dialog.modal .modal-done h3 { font-family: "Unbounded", system-ui, sans-serif; font-size: 18px; font-weight: 700; color: #0E2238; }
+dialog.modal .modal-done p { color: #46566A; font-size: 14px; margin-top: 8px; }
+dialog.modal .modal-done .btn { margin-top: 20px; }
+
+/* ---- twin host page (Open Digital Twin, Dashboard) ---- */
+.st.app-surface.twin-host { min-height: 100dvh; display: flex; flex-direction: column; }
+.st .twin-frame { display: block; width: 100%; flex: 1; height: calc(100dvh - 64px); min-height: 520px; border: 0; background: #0b1017; }
+.st .twin-wait { position: absolute; inset: 64px 0 0 0; display: grid; place-items: center; font-family: var(--fm); font-size: 12px; color: var(--ink-3); pointer-events: none; }
+
+/* ---- settings ---- */
+.st .settings { max-width: 760px; margin: 0 auto; padding: 40px 22px 80px; }
+.st .settings h1 { font-size: 30px; }
+.st .settings .panel { margin-top: 18px; }
+.st .settings .row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line-2); flex-wrap: wrap; }
+.st .settings .row:last-child { border-bottom: 0; }
+.st .settings .row .rl { font-size: 14px; font-weight: 600; color: var(--ink); }
+.st .settings .row .rd { font-size: 13px; color: var(--ink-3); margin-top: 3px; max-width: 34em; }
+.st .settings input[type=text], .st .settings select { font-family: var(--fb); font-size: 14px; color: #16132B; background: #F6F6FB; border: 1px solid #E4E2EF; border-radius: 10px; padding: 9px 12px; min-width: 220px; }
+.st .settings .saved { font-family: var(--fm); font-size: 12px; color: var(--leaf); }
+
+/* ---- small toast (bottom right, like the original) ---- */
+.toasts { position: fixed; right: 16px; bottom: 16px; z-index: 300; display: flex; flex-direction: column; gap: 8px; max-width: min(420px, calc(100vw - 32px)); }
+.toasts .t { background: #fff; color: #0E2238; border: 1px solid #E6EAEF; border-radius: 12px; padding: 12px 16px; box-shadow: 0 10px 30px rgba(0, 0, 0, .25); font-family: "Manrope", system-ui, sans-serif; font-size: 14px; }
+.toasts .t b { display: block; font-weight: 700; }
+.toasts .t.bad { border-color: #F3C4B4; }

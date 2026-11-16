@@ -4,6 +4,8 @@ Browser digital twin of rooftop PV for [ARIEN](https://arien.base44.app/): a Ces
 
 **Live site:** https://madarapremawardhana.github.io/arien-twin/ (planner: `…/#design`, dashboard: `…/#dashboard`)
 
+**Web app around it** (landing pages, accounts, a twin per user): https://madarapremawardhana.github.io/arien-twin/web/ — source and notes in [`web/`](web/README.md).
+
 ## Shading: per-cell line traces
 
 Every cell of every panel is traced toward the sun, the browser version of the thesis's per-cell `LineTraceByChannel` (`ArienPhysics.traceCells`). Channels:
@@ -78,16 +80,17 @@ Values are STC from the manufacturers' datasheets (sources in `src/panels.js`). 
 - **Forecast**: next 7 days, daily kWh, live model.
 - **Est. yield**: hourly physics over ERA5 reanalysis for the last 12 months (365 days ending 6 days ago), with every compared model, monthly kWh, kWh/kWp and the weather-based shading loss. No inverter, cable or soiling losses. The planner's shading figure before that is a clear-sky estimate (21st of each month, Kasten with no cloud).
 
-## ARIEN account (inside arien.base44.app)
+## ARIEN account (inside the web app)
 
-When the twin runs inside the ARIEN web app (`/twin`, `/digital-twin`, the dashboard), saved sites and results belong to the signed-in user, the same `SolarSite` records the web app uses, on every device. `src/account.js` handles it:
+When the twin runs inside the ARIEN web app, saved sites and results belong to the signed-in user, on every device. The web app is the `web/` frontend in this repository (`twin/` and `dashboard/` pages) or the Base44 site (`/twin`, `/digital-twin`); both keep sites in the same `SolarSite` records. `src/account.js` handles it:
 
-- The twin sends a `hello` to its parent page, only to `https://arien.base44.app`. The page answers with the user's first name, plan and site list. It does every read and write under the account's access rules, so no password, token or email reaches the twin.
+- The twin sends a `hello` to its parent page, only to the origins in `PARENTS` (this GitHub Pages origin for `web/`, and `https://arien.base44.app`). The page answers with the user's first name, plan and site list. It does every read and write under the account's access rules, so no password, token or email reaches the twin.
 - **Save** writes the twin's full scene (`twin_scene`), its fresh results (`twin_results`) and the plain fields the web app reads. Plain fields include panel count, kWp, tilt, azimuth, tariffs, install cost, `annual_kwh_cached`, and obstacles as footprints with heights. A matching name updates that site. On a plan with a site limit (Household: 1), a new name offers to replace the saved site or open Plans.
 - Forecast and yield runs on the open site are kept with it, unless the design has changed since it was saved.
 - Sites drawn in the web designer open in the twin. Panels are grouped into rows, the web panel models map to the panel library, obstructions become buildings, trees, walls and so on, and tariffs carry over. If a site was changed in the web designer after the twin saved it, the twin rebuilds it from the web layout.
 - Sites saved only in this browser are offered once for copying into the account.
-- Opened on its own (github.io), or framed by any other site, the twin keeps using this browser's storage and doesn't wait for an answer.
+- Opened on its own, or framed by any other site, the twin keeps using this browser's storage and doesn't wait for an answer.
+- The host page switches between the designer and the dashboard by changing only the address fragment (`#design`, `#dashboard`), and the twin tells it when the user switches inside the twin. `?lat=…&lon=…&q=…` starts a new design at that place.
 - The web app uses the message `id` both to pair replies and as the site id, so the twin sends one request at a time and matches replies on type and site id.
 
 ## Put the Cesium ion key in the site ("hardcode" it)

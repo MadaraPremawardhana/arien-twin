@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en" data-root="./" data-phase="day" data-auth="out">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arien · Solar forecasts from physics</title>
+<meta name="description" content="Physics-based digital twins for short-term solar forecasting. Point Arien at your roof and get a working forecast in two minutes — no data, no install, no card.">
+<meta property="og:title" content="Arien · Solar forecasts from physics">
+<meta property="og:description" content="Physics-based digital twins for short-term solar forecasting. Point Arien at your roof and get a working forecast in two minutes — no data, no install, no card.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#16132B">
+<link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
+<script>(function(){var d=document.documentElement,g=function(k){try{return localStorage.getItem(k)}catch(e){return null}};try{var u=new URL(location.href),t=u.searchParams.get('access_token');if(t){try{localStorage.setItem('base44_access_token',t)}catch(e){}}if(t||u.searchParams.has('is_new_user')){u.searchParams.delete('access_token');u.searchParams.delete('is_new_user');history.replaceState(null,'',u.pathname+u.search+u.hash)}}catch(e){}var a=!!g('base44_access_token');d.dataset.auth=a?'in':'out';var h=new Date().getHours(),p=h>=5&&h<8?'dawn':h>=8&&h<17?'day':h>=17&&h<20?'dusk':'night',m=g('arien:theme');try{var c=JSON.parse(g('arien:phase')||'null');if(c&&Date.now()-c.t<18e5)p=c.phase}catch(e){}d.dataset.phase=m==='day'||m==='night'?m:p})();</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@700;800&amp;family=Manrope:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap">
+<link rel="stylesheet" href="./assets/site.css?v=8f09a02e">
+</head>
+<body data-page="home">
+<div class="st">
+<header class="nav">
+<div class="nav-in"><a class="brand" aria-label="Arien home" href="./"><svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="7.5" fill="#F2A516"></circle><g stroke="#0E2238" stroke-width="2" stroke-linecap="round"><path d="M16 2v4M16 26v4M2 16h4M26 16h4M6 6l2.8 2.8M23.2 23.2 26 26M26 6l-2.8 2.8M8.8 23.2 6 26"></path></g></svg> Arien</a>
+<nav class="nav-links" aria-label="Primary"><a href="./#how">How it works</a><a href="./#who">Who it's for</a><a href="./#pricing">Pricing</a></nav>
+<div class="nav-right">
+<div class="seg when-in" role="tablist" aria-label="View"><a class="seg-btn on" href="./">Home</a><a class="seg-btn" href="./dashboard/" data-app-view="dashboard">Dashboard</a></div>
+<a class="btn btn-sun dt-btn when-in" href="./twin/" data-app-view="design">Open Digital Twin</a>
+<div class="when-in" id="account" style="position: relative;"><button class="avatar" id="avatar" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false">·</button>
+<div class="acct-menu" id="acct-menu" role="menu" hidden><div class="acct-head"><div class="acct-name" id="acct-name">Account</div><div class="acct-email" id="acct-email"></div></div>
+<a role="menuitem" href="./#pricing">Manage plan</a><a role="menuitem" href="./dashboard/" data-app-view="dashboard">Dashboard</a><a role="menuitem" href="./settings/">Settings</a><button role="menuitem" data-signout>Sign out</button></div></div>
+<a class="btn btn-ghost dt-btn when-out" href="./login/">Log in</a><a class="btn btn-sun dt-btn when-out" href="./register/">Register</a>
+<button class="menu-btn" id="menu-btn" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg></button>
+</div></div>
+<nav class="mobile-menu" id="mobile-menu" aria-label="Site navigation" hidden>
+<a class="mm-item" href="./#how">How it works</a><a class="mm-item" href="./#who">Who it's for</a><a class="mm-item" href="./#pricing">Pricing</a>
+<a class="mm-item when-in" href="./dashboard/" data-app-view="dashboard">Dashboard</a><a class="mm-item mm-btn when-in" href="./twin/" data-app-view="design">Open Digital Twin</a><a class="mm-item when-in" href="./settings/">Settings</a><button class="mm-item when-in" data-signout>Sign out</button>
+<a class="mm-item mm-btn when-out" href="./login/">Log in</a><a class="mm-item mm-btn when-out" href="./register/">Register</a>
+</nav>
+</header>
+<main><section class="hero"><div class="hero-glow" aria-hidden="true"></div>
+<div class="hero-in"><div class="hero-head"><span class="eyebrow hero-eyebrow">Physics-based solar forecasting</span><h1 class="wordmark">Arien</h1>
+<p class="hero-sub">Forecast any solar array, before it’s even built.</p>
+</div>
+<div class="hero-row"><div class="hero-copy"><form class="loc-field py-1" id="loc-form"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7C8A9B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-map-pin"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"></path><circle cx="12" cy="10" r="3"></circle></svg><input id="loc-input" placeholder="Enter a city, postcode or coordinates" aria-label="Location" autocomplete="off"><button type="submit" class="btn btn-primary" id="loc-go" aria-label="Search" style="padding: 8px 14px;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-search"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg></button></form>
+<div class="mono" id="loc-err" hidden style="font-size: 12px; color: var(--down); margin-top: 8px;"></div>
+<div class="hero-cta"><a class="btn btn-sun when-out" style="font-size: 15px; padding: 12px 24px;" href="./register/?plan=household">Start free</a><a class="btn btn-sun when-in" style="font-size: 15px; padding: 12px 24px;" href="./twin/">Open Digital Twin</a><button class="btn btn-ghost" id="live-forecast">See a live forecast →</button></div>
+<button class="loc-chip" id="loc-chip" hidden><svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-crosshair"><circle cx="12" cy="12" r="10"></circle><line x1="22" x2="18" y1="12" y2="12"></line><line x1="6" x2="2" y1="12" y2="12"></line><line x1="12" x2="12" y1="6" y2="2"></line><line x1="12" x2="12" y1="22" y2="18"></line></svg><span id="loc-chip-text">Use my location</span></button><div id="fcard-slot"></div>
+</div>
+<div class="hero-aside"><div class="globe-stage" id="globe-stage"><div class="globe-placeholder" aria-hidden="true"></div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="wrap"><div class="sec-head"><span class="eyebrow">Why Arien</span><h2>The forecast works where the data doesn't exist yet.</h2>
+<p>Most tools either give you a one-off annual estimate or need years of your own generation history. Arien does neither.</p>
+</div>
+<div class="grid3"><div class="card"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0E2238" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></div>
+<h3>No data required</h3>
+<p>First-principles physics and public weather forecasts drive the model, so a brand-new array is supported the moment you add it — no waiting for a year of readings.</p>
+</div>
+<div class="card"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#0E2238" stroke-width="1.8" stroke-linejoin="round"><path d="M12 2 21 7v10l-9 5-9-5V7z"></path><path d="m3 7 9 5 9-5M12 12v10"></path></svg></div>
+<h3>Walk the array in 3D</h3>
+<p>Test tilt, orientation and shading in a 3D twin of your array (preview) and watch the yield change.</p>
+</div>
+<div class="card"><div class="ic"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9 6c4-1 6-3 8-4 1 4 .5 12-6 16Z"></path><path d="M9 14c2-2 4-3 6-4"></path></svg></div>
+<h3>Lighter on the planet</h3>
+<p>The physics engine uses up to 60× less compute energy than machine-learning forecasters — matched or beat trained ML baselines in our tests, at a fraction of the energy.</p>
+</div>
+</div>
+</section>
+<section class="how py-10" id="how"><div class="wrap"><div class="sec-head"><span class="eyebrow">How it works</span><h2>Three steps from a postcode to a plan.</h2>
+</div>
+<div class="steps"><div class="step"><div class="num">STEP 01</div>
+<h3>Tell us where</h3>
+<p>Enter a location and a few panel details — tilt, orientation, wattage. No site history, no uploads.</p>
+</div>
+<div class="step"><div class="num">STEP 02</div>
+<h3>We model the physics</h3>
+<p>Solar geometry, irradiance and live weather forecasts drive a digital twin of your exact system, hour by hour.</p>
+</div>
+<div class="step"><div class="num">STEP 03</div>
+<h3>You get answers</h3>
+<p>A 7-day hourly forecast, plain-English recommendations, and an interactive 3D twin you can experiment in.</p>
+</div>
+</div>
+</div>
+</section>
+<section class="wrap" id="who"><div class="sec-head"><span class="eyebrow">Who it's for</span><h2>One engine, from a single rooftop to a national grid.</h2>
+</div>
+<div class="grid4"><div class="aud"><div class="tag">Households</div>
+<h3>Run life on sunshine</h3>
+<p>See when your roof makes free energy and shift the dishwasher, the EV charge or the wash to the sunny hours.</p>
+<div class="price">Free · 1 system</div>
+</div>
+<div class="aud"><div class="tag">Academics</div>
+<h3>Simulate anything</h3>
+<p>Model any array in any climate, compare physics models, and export everything for your research.</p>
+<div class="price">Free for 3 months</div>
+</div>
+<div class="aud"><div class="tag">Installers &amp; industry</div>
+<h3>Design &amp; de-risk</h3>
+<p>Shade-test, optimise layout and forecast yield for client sites in the browser — then schedule around it.</p>
+<div class="price">Paid · per seat</div>
+</div>
+<div class="aud"><div class="tag">Grid &amp; planners</div>
+<h3>Balance the system</h3>
+<p>Aggregate short-term forecasts across a fleet to cut spinning reserve and curtailment.</p>
+<div class="price">Talk to us · API</div>
+</div>
+</div>
+</section>
+<section class="pricing" id="pricing"><div class="wrap"><div class="sec-head"><span class="eyebrow">Pricing</span><h2>Start free. Pay when it's doing real work.</h2>
+<p>All plans include access to the dashboard. Simulate more than one solar panel system by upgrading.</p>
+</div>
+<div class="tiers"><div class="tier"><div class="name">Household</div>
+<div class="cost">Free<small> / forever</small></div>
+<ul><li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg> One solar panel</li>
+<li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg> 7-day hourly forecast</li>
+<li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg> Dashboard &amp; energy tips</li>
+<li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg> Digital Twin preview</li>
+</ul>
+<a class="btn btn-ghost when-out" href="./register/?plan=household">Start free</a><a class="btn btn-ghost when-in" href="./twin/">Open Digital Twin</a></div>
+<div class="tier feat"><div class="flag">Free 3-month trial</div>
+<div class="name">Academic</div>
+<div class="cost">Free<small> / 3 months</small></div>
+<ul><li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg> Unlimited panels &amp; sites</li>
+<li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg> Every physics model</li>
+<li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg> Full data export</li>
+<li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg> Extended Digital Twin access</li>
+</ul>
+<a class="btn btn-sun when-out" href="./register/?plan=academic">Apply with an academic email</a><a class="btn btn-sun when-in" href="./plans/?apply=academic">Apply with an academic email</a></div>
+<div class="tier"><div class="name">Industry</div>
+<div class="cost">Custom</div>
+<ul><li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg> Multi-site &amp; team seats</li>
+<li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg> Forecasting API &amp; SLA</li>
+<li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg> Priority Digital Twin</li>
+<li><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1E9E6A" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg> Procurement &amp; grid tools</li>
+</ul>
+<a class="btn btn-primary" href="./contact/">Talk to sales</a></div>
+</div>
+</div>
+</section>
+<section class="wrap"><div class="sec-head"><span class="eyebrow">How we're different</span><h2>Not a static report. Not a black box.</h2>
+</div>
+<div class="compare"><div class="cmp"><h4>Static design tools</h4>
+<p>PVGIS, SAM and friends give a one-off annual estimate — no real-time forecast, no scenario testing, no 3D you can walk through.</p>
+</div>
+<div class="cmp"><h4>Black-box ML</h4>
+<p>Needs years of your site's data, can't explain a number, and burns serious compute to stay accurate.</p>
+</div>
+<div class="cmp us"><h4>Arien</h4>
+<p>Real-time and physics-based: interpretable, interactive in 3D, runs anywhere with no history — at a fraction of the energy.</p>
+</div>
+</div>
+</section>
+<section class="wrap" style="padding-top: 20px; padding-bottom: 110px;"><div class="cta-band"><div><h2>Point Arien at your roof.</h2>
+<p>A working forecast in two minutes — no data, no install, no card.</p>
+</div>
+<a class="btn btn-sun when-out" style="position: relative; z-index: 1;" href="./register/?plan=household">Start free</a><a class="btn btn-sun when-in" style="position: relative; z-index: 1;" href="./twin/">Open Digital Twin</a></div>
+</section>
+</main>
+<footer><div class="wrap"><div class="foot-grid"><div><a class="brand" href="./" style="font-size: 18px;"><svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="7.5" fill="#F2A516"></circle><g stroke="#0E2238" stroke-width="2" stroke-linecap="round"><path d="M16 2v4M16 26v4M2 16h4M26 16h4M6 6l2.8 2.8M23.2 23.2 26 26M26 6l-2.8 2.8M8.8 23.2 6 26"></path></g></svg> Arien</a><p style="color: rgb(124, 138, 155); font-size: 13.5px; margin-top: 12px; max-width: 24em;">Physics-based digital twins for short-term solar forecasting.</p>
+</div>
+<div><h5>Product</h5>
+<a href="./#how">How it works</a><a href="./#pricing">Pricing</a><a href="./dashboard/">Dashboard</a><a href="./twin/">3D twin</a></div>
+<div><h5>Company</h5>
+<a href="https://scholar.google.com/citations?user=DW7RRvgAAAAJ&amp;hl=en" target="_blank" rel="noopener noreferrer">Research</a><a href="./contact/">Contact</a></div>
+<div><h5>Legal</h5>
+<a href="./privacy/">Privacy</a><a href="./terms/">Terms</a><a href="./data/">Data &amp; security</a></div>
+</div>
+</div>
+<div class="foot-note"><span>© 2026 Arien. Physics-based solar forecasting.</span></div>
+</footer>
+</div>
+<script src="./config.js?v=8f09a02e"></script>
+<script type="module" src="./assets/app.js?v=8f09a02e"></script>
+</body>
+</html>

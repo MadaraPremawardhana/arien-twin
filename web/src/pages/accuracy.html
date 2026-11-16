@@ -1,0 +1,51 @@
+<section class="wrap" style="padding-top: 56px; padding-bottom: 80px;"><div style="max-width: 980px; margin: 0px auto;"><span class="eyebrow">Accuracy</span><h1 style="font-size: 36px; margin-top: 10px;">Validated against real rooftops</h1>
+<p style="color: rgb(70, 86, 106); font-size: 16px; line-height: 1.7; margin-top: 16px; max-width: 52em;">Validated against measured rooftop generation at two UK sites: Knorr-Bremse (Melksham) and Belloff House, University of Buckingham. Forecasts driven by weather forecasts issued 1–7 days ahead, Jan–May 2025 (1,057 forecast-day pairs per model).</p>
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 32px;"><div class="card" style="padding: 0px; overflow: hidden;"><div style="padding: 16px 20px; border-bottom: 1px solid rgb(230, 234, 239);"><h3 style="font-size: 17px;">Real-World GHI model</h3>
+</div>
+<table class="ptable" style="margin: 0px;"><thead><tr><th>Lead day</th><th class="n">MAE (Wh)</th><th class="n">RMSE (Wh)</th><th class="n">R²</th></tr>
+</thead>
+<tbody><tr><td style="font-family: var(--fm);">N-1</td><td class="n">21.07</td><td class="n">42.58</td><td class="n">0.720</td></tr>
+<tr><td style="font-family: var(--fm);">N-2</td><td class="n">21.55</td><td class="n">42.74</td><td class="n">0.718</td></tr>
+<tr><td style="font-family: var(--fm);">N-3</td><td class="n">22.51</td><td class="n">44.60</td><td class="n">0.693</td></tr>
+<tr><td style="font-family: var(--fm);">N-4</td><td class="n">24.58</td><td class="n">51.31</td><td class="n">0.593</td></tr>
+<tr><td style="font-family: var(--fm);">N-5</td><td class="n">25.79</td><td class="n">48.97</td><td class="n">0.629</td></tr>
+<tr><td style="font-family: var(--fm);">N-6</td><td class="n">30.91</td><td class="n">56.20</td><td class="n">0.512</td></tr>
+<tr><td style="font-family: var(--fm);">N-7</td><td class="n">35.18</td><td class="n">65.73</td><td class="n">0.332</td></tr>
+</tbody>
+</table>
+</div>
+<div class="card" style="padding: 0px; overflow: hidden;"><div style="padding: 16px 20px; border-bottom: 1px solid rgb(230, 234, 239);"><h3 style="font-size: 17px;">HDKR model</h3>
+</div>
+<table class="ptable" style="margin: 0px;"><thead><tr><th>Lead day</th><th class="n">MAE (Wh)</th><th class="n">RMSE (Wh)</th><th class="n">R²</th></tr>
+</thead>
+<tbody><tr><td style="font-family: var(--fm);">N-1</td><td class="n">24.87</td><td class="n">52.04</td><td class="n">0.582</td></tr>
+<tr><td style="font-family: var(--fm);">N-2</td><td class="n">27.19</td><td class="n">55.07</td><td class="n">0.531</td></tr>
+<tr><td style="font-family: var(--fm);">N-3</td><td class="n">27.45</td><td class="n">55.78</td><td class="n">0.519</td></tr>
+<tr><td style="font-family: var(--fm);">N-4</td><td class="n">27.66</td><td class="n">54.46</td><td class="n">0.542</td></tr>
+<tr><td style="font-family: var(--fm);">N-5</td><td class="n">30.03</td><td class="n">58.79</td><td class="n">0.466</td></tr>
+<tr><td style="font-family: var(--fm);">N-6</td><td class="n">36.37</td><td class="n">68.28</td><td class="n">0.280</td></tr>
+<tr><td style="font-family: var(--fm);">N-7</td><td class="n">28.28</td><td class="n">53.74</td><td class="n">0.554</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="card" style="margin-top: 18px; padding: 0px; overflow: hidden;"><div style="padding: 16px 20px; border-bottom: 1px solid rgb(230, 234, 239);"><h3 style="font-size: 17px;">Energy per forecast (GPU, joules)</h3>
+</div>
+<table class="ptable" style="margin: 0px;"><thead><tr><th>Model</th><th class="n">Joules</th></tr>
+</thead>
+<tbody><tr><td>Real-World GHI</td><td class="n">45</td></tr>
+<tr><td>Kasten</td><td class="n">94</td></tr>
+<tr><td>HDKR</td><td class="n">294</td></tr>
+<tr><td>ANN</td><td class="n">492</td></tr>
+<tr><td>GRU</td><td class="n">914</td></tr>
+<tr><td>LSTM</td><td class="n">1,306</td></tr>
+<tr><td>BiLSTM</td><td class="n">2,611</td></tr>
+</tbody>
+</table>
+</div>
+<div class="card" style="margin-top: 18px; padding: 20px 24px;"><h3 style="font-size: 16px; margin-bottom: 8px;">Limitations</h3>
+<p style="color: rgb(70, 86, 106); font-size: 14.5px; line-height: 1.7;">Both validation sites are in the UK. Soiling, degradation and micro-cracks are not modelled yet. Accuracy falls beyond 4–5 days as weather forecasts lose skill.</p>
+</div>
+<div style="margin-top: 24px; display: flex; gap: 14px; flex-wrap: wrap;"><a class="btn btn-primary" href="https://scholar.google.com/citations?user=DW7RRvgAAAAJ&amp;hl=en" target="_blank" rel="noopener noreferrer">Read the thesis</a><a class="btn btn-ghost" href="https://scholar.google.com/citations?user=DW7RRvgAAAAJ&amp;hl=en" target="_blank" rel="noopener noreferrer">Google Scholar</a></div>
+</div>
+</section>

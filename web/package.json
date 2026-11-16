@@ -1,0 +1,13 @@
+{
+  "name": "arien-web",
+  "private": true,
+  "description": "ARIEN web app: landing pages, accounts and the digital twin host page",
+  "scripts": { "build": "python3 build.py" },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "globe.gl": "^2.41.0",
+    "leaflet": "^1.9.4",
+    "suncalc": "^1.9.0",
+    "three": "^0.180.0"
+  }
+}

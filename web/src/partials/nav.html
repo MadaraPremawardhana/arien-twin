@@ -1,0 +1,18 @@
+<header class="nav">
+<div class="nav-in"><a class="brand" aria-label="Arien home" href="{{root}}">{{mark}} Arien</a>
+<nav class="nav-links" aria-label="Primary"><a href="{{root}}#how">How it works</a><a href="{{root}}#who">Who it's for</a><a href="{{root}}#pricing">Pricing</a></nav>
+<div class="nav-right">
+<div class="seg when-in" role="tablist" aria-label="View"><a class="seg-btn{{seg_home}}" href="{{root}}">Home</a><a class="seg-btn{{seg_dashboard}}" href="{{root}}dashboard/" data-app-view="dashboard">Dashboard</a></div>
+<a class="btn btn-sun dt-btn when-in" href="{{root}}twin/" data-app-view="design">Open Digital Twin</a>
+<div class="when-in" id="account" style="position: relative;"><button class="avatar" id="avatar" aria-label="Account menu" aria-haspopup="menu" aria-expanded="false">·</button>
+<div class="acct-menu" id="acct-menu" role="menu" hidden><div class="acct-head"><div class="acct-name" id="acct-name">Account</div><div class="acct-email" id="acct-email"></div></div>
+<a role="menuitem" href="{{root}}#pricing">Manage plan</a><a role="menuitem" href="{{root}}dashboard/" data-app-view="dashboard">Dashboard</a><a role="menuitem" href="{{root}}settings/">Settings</a><button role="menuitem" data-signout>Sign out</button></div></div>
+<a class="btn btn-ghost dt-btn when-out" href="{{root}}login/">Log in</a><a class="btn btn-sun dt-btn when-out" href="{{root}}register/">Register</a>
+<button class="menu-btn" id="menu-btn" aria-label="Open menu" aria-expanded="false" aria-controls="mobile-menu"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg></button>
+</div></div>
+<nav class="mobile-menu" id="mobile-menu" aria-label="Site navigation" hidden>
+<a class="mm-item" href="{{root}}#how">How it works</a><a class="mm-item" href="{{root}}#who">Who it's for</a><a class="mm-item" href="{{root}}#pricing">Pricing</a>
+<a class="mm-item when-in" href="{{root}}dashboard/" data-app-view="dashboard">Dashboard</a><a class="mm-item mm-btn when-in" href="{{root}}twin/" data-app-view="design">Open Digital Twin</a><a class="mm-item when-in" href="{{root}}settings/">Settings</a><button class="mm-item when-in" data-signout>Sign out</button>
+<a class="mm-item mm-btn when-out" href="{{root}}login/">Log in</a><a class="mm-item mm-btn when-out" href="{{root}}register/">Register</a>
+</nav>
+</header>
