@@ -22,22 +22,25 @@ Live: https://madarapremawardhana.github.io/arien-twin/web/
 
 ## Google sign-in
 
-Base44 only returns a Google sign-in to its own app's address. Any other return address ends in `"Domain is not valid"`, and Base44 has no setting to allow more (an open request on its feedback board, checked 16 Nov 2026).
+Base44 only returns a Google sign-in to the app's own address, and it decides which address that is from the page the sign-in *starts* on (the browser's referrer), not from the return address. Started from this site it records github.io, and its callback answers `"Domain is not valid"`. An explicit `domain` parameter is ignored (both checked 16–17 Nov 2026).
 
-So "Continue with Google" returns to a relay page in the Base44 app (`ssoRelay` in `config.js`, `https://arien.base44.app/sso-return`). That page sends the browser on to this site's home page with the session in the address fragment. This site's first script stores it, removes it from the address and goes to the page the user was heading for.
+So "Continue with Google" goes to a relay page in the Base44 app (`ssoRelay` in `config.js`, `https://arien.base44.app/sso-return`):
 
-The relay page must exist in the Base44 app. Prompt for Base44's AI chat:
+1. `?start=google` starts the sign-in from there, so Base44 records `https://arien.base44.app`.
+2. Google returns to the same page, which sends the browser on to this site's home page with the session in the address fragment.
+3. This site's first script stores the session, removes it from the address and goes to the page the user was heading for.
+
+Prompt for Base44's AI chat (the relay page as built on 17 Nov already does the second part):
 
 ```
-Add a public page at /sso-return (no header, no footer, no login required). It hands a finished sign-in to our own frontend.
-On load, read the access token: first the access_token URL parameter if present, otherwise localStorage.getItem('base44_access_token').
-- If there is a token: window.location.replace('https://madarapremawardhana.github.io/arien-twin/web/#access_token=' + encodeURIComponent(token)).
-  The destination is this fixed constant. Never read it from the URL or anywhere else.
-- If there is no token: show "Sign-in did not complete." with a link "Back to Arien" to https://madarapremawardhana.github.io/arien-twin/web/login/.
-Never display or log the token. While redirecting, show only "Signing you in…".
+Update the /sso-return page. Keep everything it does now, and add one thing first:
+If the URL has ?start=google, immediately run
+window.location.href = '/api/apps/auth/login?app_id=6a4fb7864ffb55c91635b7d7&from_url=' + encodeURIComponent('https://arien.base44.app/sso-return');
+and do nothing else (show only "Signing you in…"). The from_url is this fixed constant; never read it from the URL.
+This check must come before reading any token, so a visitor who is already signed in still goes through Google.
 ```
 
-If this site moves to another address, change the constant in that page to the new home page.
+If this site moves to another address, change the destination constant in that page to the new home page.
 
 ## Contact emails
 

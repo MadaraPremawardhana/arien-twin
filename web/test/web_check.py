@@ -112,10 +112,14 @@ def router(backend):
             return r.fulfill(status=404, body='not found')
         if u.netloc == 'arien.base44.app' and u.path == '/api/apps/auth/login':   # Google sign-in: only returns to its own app's address
             q = up.parse_qs(u.query); backend.google.append(q)
-            if not q['from_url'][0].startswith('https://arien.base44.app/'): return r.fulfill(status=400, body=json.dumps({'error_type': 'HTTPException', 'message': 'Domain is not valid'}), headers={'content-type': 'application/json'})
+            ref = r.request.headers.get('referer', '')   # like the real service: the return domain is the page the sign-in started from
+            if not q['from_url'][0].startswith('https://arien.base44.app/') or not ref.startswith('https://arien.base44.app/'): return r.fulfill(status=400, body=json.dumps({'error_type': 'HTTPException', 'message': 'Domain is not valid'}), headers={'content-type': 'application/json'})
             return r.fulfill(status=302, headers={'location': q['from_url'][0] + '?access_token=' + backend.token_for(backend.users[backend.google_user])})
         if u.netloc == 'arien.base44.app' and u.path == '/sso-return':            # the relay page of the Base44 app: on to this site, session in the fragment
-            tok = up.parse_qs(u.query)['access_token'][0]
+            qs = up.parse_qs(u.query)
+            if qs.get('start') == ['google']:
+                return r.fulfill(status=200, body='<script>location.href = "/api/apps/auth/login?app_id=6a4fb7864ffb55c91635b7d7&from_url=" + encodeURIComponent("https://arien.base44.app/sso-return")</script>', headers={'content-type': 'text/html'})
+            tok = qs['access_token'][0]
             return r.fulfill(status=200, body='<script>location.replace(%s)</script>' % json.dumps(SITE + '#access_token=' + tok), headers={'content-type': 'text/html'})
         if u.netloc == 'arien.base44.app': return backend.handle(r)
         if u.netloc in ('fonts.googleapis.com', 'fonts.gstatic.com'): return r.fulfill(status=200, body='', headers={'content-type': 'text/css'})

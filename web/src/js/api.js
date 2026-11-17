@@ -81,13 +81,15 @@ export const auth = {
   resetPasswordRequest: (email) => call('POST', `${app()}/auth/reset-password-request`, { body: { email } }),
   resetPassword: (resetToken, newPassword) => call('POST', `${app()}/auth/reset-password`, { body: { reset_token: resetToken, new_password: newPassword } }),
   /**
-   * Start a Google sign-in. The account service only returns to its own app's address ("Domain is not valid" otherwise),
-   * so it returns to the relay page there, which sends the browser back to this site's home page with the session in
+   * Start a Google sign-in. The account service only returns to the app's own address, and it judges that by the page
+   * the sign-in starts from ("Domain is not valid" otherwise). So the relay page there starts it and receives it, which sends the browser back to this site's home page with the session in
    * the address fragment. The page's first script stores it, removes it from the address and goes on to `returnPath`.
    */
   startGoogle(returnPath = '') {
     try { sessionStorage.setItem('arien:after-login', returnPath || ''); } catch (e) { /* lands on the home page instead */ }
-    location.href = `${CONFIG.authBase}/api/apps/auth/login?app_id=${encodeURIComponent(CONFIG.appId)}&from_url=${encodeURIComponent(CONFIG.ssoRelay || url(''))}`;
+    // Base44 takes the return domain from the page that starts the sign-in (the referrer), so the relay page starts it too
+    location.href = CONFIG.ssoRelay ? `${CONFIG.ssoRelay}?start=google`
+      : `${CONFIG.authBase}/api/apps/auth/login?app_id=${encodeURIComponent(CONFIG.appId)}&from_url=${encodeURIComponent(url(''))}`;
   },
   signOut() { clearSession(); mePromise = null; }
 };
