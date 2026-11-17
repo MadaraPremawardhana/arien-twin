@@ -11,6 +11,7 @@ Browser digital twin of rooftop PV for [ARIEN](https://arien.base44.app/): a Ces
 Every cell of every panel is traced toward the sun, the browser version of the thesis's per-cell `LineTraceByChannel` (`ArienPhysics.traceCells`). Channels:
 
 - **Placed objects**, in three groups: **Obstacles** (walls, chimneys, poles), **Foliage** (trees, conifers, hedges) and **Buildings** (drawn buildings and simple blocks). Walls, buildings, chimneys, poles and tree trunks block; a tree or hedge canopy passes its **transparency** (0% = solid, as in the thesis); several canopies multiply.
+- **Arrays snap to roofs.** Drop or place an array on a pitched roof and it takes that roof face's pitch and facing and mounts flush (0.1 m above it, rows touching along the slope, each row higher up the slope). On a drawn building the plane is the exact roof face; on 3D tiles it is fitted to 3×3 surface samples around the array (accepted when they fit one plane within 12 cm, and the surface is at least 1.5 m above the site's ground). On a flat roof the array keeps its tilt and facing and stands on the roof; dropped back on the ground it is racked again. Changing tilt or facing by hand turns a flush array into a racked one; *Snap to the roof here* re-snaps, and the *Snap to the roof's angle* box turns it off per array. Only roof faces the camera can see can be dropped on.
 - **Drawn buildings** (Objects → Buildings → *Draw a building*): set the floors and roof, click each corner of the floor area on the ground, then *Finish* (Enter, or click the first corner; Backspace removes the last corner, Esc cancels). Any simple outline works, L-shapes included.
   - Walls rise to the eaves (floors × floor height, 2.8 m by default). The roof is flat, gable, hip or mono-pitch, with a pitch (35°, 30°, 15° by default) and a ridge along the long or short side. On non-rectangular plans the roof planes follow the plan's bounding rectangle.
   - The 3D model and the shading traces use the same wall and roof triangles. *Match floors to the 3D tiles* sets the number of floors from the tiles; *Redraw the floor area* keeps the settings.
@@ -215,6 +216,7 @@ test/account.test.js   node test/account.test.js
 test/account_check.py  the twin inside a copy of the web app's /twin page (handler as published 10 Nov 2026)
 test/run_browser.py    headless Chrome check with mocked CDN, tiles and weather
 test/models_check.py   renders every object at each level of detail
+test/roof_snap_check.py  arrays dropped on gable, flat and ground surfaces; snap toggle and button
 test/buildings_check.py  object groups, drawing buildings in 3D and on the map, floors and roof, save and reopen
 tools/fetch_weather.py fills the weather-data branch (run by the workflow)
 ```

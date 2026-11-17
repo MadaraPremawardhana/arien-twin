@@ -348,7 +348,7 @@
     });
   }
   async function dropItems(items) {
-    if (state.world.src === 'none') { items.forEach(i => { i.z = 0; i.worldSrc = 'none'; }); keepRoofPlanes(items); rebuildAll(); return; }
+    if (state.world.src === 'none') { items.forEach(i => { i.z = 0; i.worldSrc = 'none'; }); keepRoofPlanes(items); items.filter(i => i.flush).forEach(a => snapArray(a, { force: true })); rebuildAll(); return; }
     const ex = excludeList();
     for (const it of items) {
       const top = Math.max(it.z, state.site.groundZ) + 400;
@@ -361,6 +361,7 @@
       it.worldSrc = state.world.src;
     }
     keepRoofPlanes(items);
+    items.filter(i => i.flush).forEach(a => snapArray(a, { force: true }));
     rebuildAll(); state.shade.dirty = true; clearProfiles(); saveSoon();
   }
 
@@ -396,11 +397,11 @@
         });
       }
       // mounting legs: front and back posts down to the mount base
-      const baseZ = a.z;
       for (const side of [-1, 1]) for (const edge of [-1, 1]) {
         const ex = p.c[0] + p.u[0] * side * a.panelW * 0.38 + p.v[0] * edge * a.panelL * 0.45;
         const ey = p.c[1] + p.u[1] * side * a.panelW * 0.38 + p.v[1] * edge * a.panelL * 0.45;
         const ez = p.c[2] + p.v[2] * edge * a.panelL * 0.45 - 0.03;
+        const baseZ = a.flush ? ez + 0.03 - a.mountHeight : a.z; // flush: short brackets down to the roof under the panel
         const h = ez - baseZ;
         if (h < 0.04) continue;
         const legGeo = Cesium.BoxGeometry.fromDimensions({ dimensions: new Cesium.Cartesian3(0.04, 0.04, h), vertexFormat: vf });
@@ -595,7 +596,7 @@
     handler.setInputAction((e) => {
       if (drag.item) {
         const xy = rayToPlane(e.endPosition, drag.item.z); if (!xy) return;
-        drag.item.x = xy[0] + drag.off[0]; drag.item.y = xy[1] + drag.off[1]; drag.moved = true;
+        drag.item.x = xy[0] + drag.off[0]; drag.item.y = xy[1] + drag.off[1]; drag.moved = true; drag.lastPos = Cesium.Cartesian2.clone(e.endPosition);
         if (drag.kind === 'object') updateObjectMatrix(drag.item);
         else {
           const rec = arrayPrims.get(drag.item.id);
@@ -615,7 +616,7 @@
       if (!drag.item) return;
       const it = drag.item, kind = drag.kind; drag.item = null;
       scene.screenSpaceCameraController.enableInputs = true;
-      if (drag.moved) { commitItem(kind, it); drag.justDragged = true; setTimeout(() => { drag.justDragged = false; }, 50); }
+      if (drag.moved) { if (kind === 'array') settleArray(it, drag.lastPos, drag.off); commitItem(kind, it); drag.justDragged = true; setTimeout(() => { drag.justDragged = false; }, 50); }
     }, Cesium.ScreenSpaceEventType.LEFT_UP);
     handler.setInputAction((e) => {
       if (drag.justDragged) return;
@@ -623,6 +624,75 @@
       const hit = pickItem(e.position);
       if (hit) select(hit.kind, hit.item.id, true); else select(null);
     }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+  }
+
+  // ------------------------------------------------------------------ roofs: arrays dropped on a pitched roof take its angle
+  const ROOF_MIN = 1.5; // a 3D-tile surface this far above the site's ground counts as a roof
+  /** What the camera ray at a screen position hits first, ignoring arrays: {p, roof} with p in ENU metres */
+  function surfaceUnder(pos) {
+    const ray = viewer.camera.getPickRay(pos); if (!ray) return null;
+    const o = ecef2enu(ray.origin), d0 = vecEcef2Enu(ray.direction), l = Math.hypot(...d0), d = d0.map(v => v / l);
+    let t = Infinity, roof = false;
+    for (const ob of state.objects) if (ob.type === 'house' || ob.type === 'building') { const r = PH.objectTrace(ob, o, d); if (r && r.t < t) { t = r.t; roof = true; } }
+    if (state.world.src !== 'none') {
+      let h; try { h = scene.pickFromRay(ray, excludeList(), 0.2); } catch (e) { h = null; }
+      if (h && h.position) { const q = ecef2enu(h.position), tt = Math.hypot(q[0] - o[0], q[1] - o[1], q[2] - o[2]); if (tt < t) { t = tt; roof = q[2] - state.site.groundZ > ROOF_MIN; } }
+    }
+    if (t === Infinity && Math.abs(d[2]) > 1e-6) { const tg = (state.site.groundZ - o[2]) / d[2]; if (tg > 0) t = tg; }
+    return t === Infinity ? null : { p: [o[0] + d[0] * t, o[1] + d[1] * t, o[2] + d[2] * t], roof };
+  }
+  /**
+   * The roof plane at (x, y): a drawn building's exact roof face (or a block's flat top), else a plane fitted to
+   * 3×3 samples of the 3D tiles. {z, n, tilt, azimuth, src} · {fail} when the tiles are not one plane · null on the ground.
+   */
+  function roofPlane(x, y) {
+    let best = null;
+    for (const ob of state.objects) { const r = PH.roofAt(ob, x, y); if (r && (!best || r.z > best.z)) best = { ...r, src: 'building' }; }
+    if (best) return best;
+    if (state.world.src === 'none' || !scene) return null;
+    const ex = excludeList(), down = vecEnu2Ecef([0, 0, -1]), top = state.site.groundZ + 400;
+    for (const step of [0.7, 0.4]) {
+      const pts = [];
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+        let h; try { h = scene.pickFromRay(new Cesium.Ray(enu2ecef(x + i * step, y + j * step, top), down), ex, 0.2); } catch (e) { h = null; }
+        if (h && h.position) pts.push(ecef2enu(h.position));
+      }
+      if (pts.length < 6) continue;
+      const f = PH.fitPlane(pts); if (!f) continue;
+      const z = f.zAt(x, y); if (z - state.site.groundZ < ROOF_MIN) return null;
+      if (f.rms < 0.12) return { z, n: f.n, tilt: f.tilt, azimuth: f.azimuth, src: 'tiles' };
+    }
+    return { fail: true };
+  }
+  /** Put an array on the roof under it: flush at the roof's pitch and facing on a pitched roof, racked on a flat one */
+  function snapArray(a, opts = {}) {
+    if (a.snap === false && !opts.force) return null;
+    const r = roofPlane(a.x, a.y);
+    if (!r) return null;
+    if (r.fail) return { status: 'fail' };
+    if (r.tilt < 3) { a.flush = false; a.z = r.z; return { status: 'flat', r }; }
+    a.tilt = Math.round(r.tilt * 10) / 10; a.azimuth = Math.round(r.azimuth) % 360; a.flush = true;
+    a.mountHeight = 0.1; // rails and brackets: about 10 cm off the tiles
+    a.rowPitch = +(a.panelL * Math.cos(a.tilt * D2R) + 0.02).toFixed(3); // rows touch along the slope
+    a.z = r.z - (a.panelL / 2) * Math.sin(a.tilt * D2R);
+    return { status: 'roof', r };
+  }
+  function reportSnap(a, res) {
+    if (!res) return;
+    if (res.status === 'roof') toast(`Snapped to the roof: ${a.tilt}° pitch, facing ${a.azimuth}° ${compass(a.azimuth)}${res.r.src === 'tiles' ? ' (measured from the 3D tiles)' : ''}. Mounted flush, 0.1 m above it.`, 'ok', 5000);
+    else if (res.status === 'flat') toast('Flat roof: the array sits on it with your tilt and facing.', 'info');
+    else if (res.status === 'fail') toast('No single roof plane here (a ridge, edge or uneven surface). Move it onto one roof face, or set tilt and facing by hand.', 'warn', 6000);
+  }
+  /** After a drag: land on whatever is under the cursor, then take the roof's angle if it is a roof */
+  function settleArray(a, pos, off) {
+    if (a.snap === false || !pos) return;
+    const hit = surfaceUnder(pos); if (!hit) return;
+    a.x = hit.p[0] + off[0]; a.y = hit.p[1] + off[1];
+    const res = snapArray(a);
+    if (!res || res.status === 'fail') { // on the ground (or no clear plane): stand on the surface, racked
+      if (!hit.roof || res) { a.flush = false; a.z = hit.p[2]; }
+    }
+    reportSnap(a, res);
   }
   function commitItem(kind, it) {
     if (kind === 'array') buildArrayPrimitive(it); else updateObjectMatrix(it);
@@ -651,7 +721,7 @@
     if (state.placing.kind === 'outline') { outlineClick(p, pos); return; }
     const pl = state.placing; stopPlacing();
     if (pl.kind === 'array') {
-      const a = defaultArray(p[0], p[1], p[2]); state.arrays.push(a); buildArrayPrimitive(a); select('array', a.id, true);
+      const a = defaultArray(p[0], p[1], p[2]); state.arrays.push(a); reportSnap(a, snapArray(a)); buildArrayPrimitive(a); select('array', a.id, true);
     } else {
       const o = defaultObject(pl.type, p[0], p[1], p[2]); state.objects.push(o); buildObjectModel(o); select('object', o.id, true);
     }
@@ -1576,6 +1646,9 @@ void main() {
       set('#arr-gamma', a.gammaPct); set('#arr-cx', a.cellsX); set('#arr-cy', a.cellsY);
       set('#arr-x', a.x.toFixed(2)); set('#arr-y', a.y.toFixed(2)); set('#arr-z', a.z.toFixed(2));
       $('#arr-tilt-out').textContent = a.tilt + '°';
+      $('#arr-snap').checked = a.snap !== false;
+      $('#arr-roof-note').textContent = a.flush ? `Flush on the roof: the rows follow its ${a.tilt}° slope, ${a.mountHeight} m above it. Changing tilt or facing turns it into a racked array.`
+        : 'Racked: every row stands at the same height. Drag it onto a pitched roof to mount it flush at the roof\'s angle.';
       $('#arr-az-out').textContent = `${a.azimuth}° ${compass(a.azimuth)}`;
       const n = a.rows * a.cols, area = n * a.panelW * a.panelL;
       $('#arr-capacity').innerHTML = `${n} panels · ${area.toFixed(1)} m² · <b>${PN.arrayKwp(a).toFixed(2)} kWp</b> · ${(n * a.cellsX * a.cellsY).toLocaleString()} cells`;
@@ -1608,12 +1681,20 @@ void main() {
       if (opts.int) v = Math.round(v);
       if (opts.min != null) v = Math.max(opts.min, v); if (opts.max != null) v = Math.min(opts.max, v);
       a[key] = v;
+      if (opts.unflush) a.flush = false;
       if (opts.panel && !PN.matches(a)) a.panelModel = 'custom';
       if (opts.live) { const o = $(id + '-out'); if (o) o.textContent = key === 'azimuth' ? `${v}° ${compass(v)}` : v + '°'; }
       scheduleArrayRebuild(a, opts.live);
     });
     num('#arr-rows', 'rows', { int: true, min: 1, max: 40 }); num('#arr-cols', 'cols', { int: true, min: 1, max: 60 });
-    num('#arr-pitch', 'rowPitch', { min: 0.3 }); num('#arr-tilt', 'tilt', { live: true, min: 0, max: 90 }); num('#arr-az', 'azimuth', { live: true, min: 0, max: 359 });
+    num('#arr-pitch', 'rowPitch', { min: 0.3 }); num('#arr-tilt', 'tilt', { live: true, min: 0, max: 90, unflush: true }); num('#arr-az', 'azimuth', { live: true, min: 0, max: 359, unflush: true });
+    $('#arr-snap').addEventListener('change', (e) => { const a = selItem(); if (a && state.sel.kind === 'array') { a.snap = e.target.checked; saveSoon(); } });
+    $('#arr-snap-now').addEventListener('click', () => {
+      const a = selItem(); if (!a || state.sel.kind !== 'array') return;
+      const res = snapArray(a, { force: true });
+      if (!res) { toast('There is no roof under this array. Drag it onto a roof first.', 'warn'); return; }
+      reportSnap(a, res); scheduleArrayRebuild(a);
+    });
     num('#arr-mount', 'mountHeight', { min: 0 }); num('#arr-gap', 'colGap', { min: 0 }); num('#arr-pw', 'panelW', { min: 0.2, panel: true }); num('#arr-pl', 'panelL', { min: 0.2, panel: true });
     num('#arr-gamma', 'gammaPct', { min: -1, max: 0, panel: true });
     num('#arr-cx', 'cellsX', { int: true, min: 1, max: 24, panel: true }); num('#arr-cy', 'cellsY', { int: true, min: 1, max: 24, panel: true });

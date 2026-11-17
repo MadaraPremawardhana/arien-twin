@@ -606,6 +606,57 @@
     syncBuilding(o);
     return o;
   }
+  /**
+   * The roof under a world point (ENU x, y) for a drawn building or a building block: {z: roof height,
+   * n: [nx, ny, nz] upward unit normal, tilt (deg), azimuth (deg the slope faces, clockwise from north)}, or null.
+   */
+  function roofAt(o, x, y) {
+    if (!o || (o.type !== 'house' && o.type !== 'building')) return null;
+    const c = Math.cos(o.heading * D2R), s = Math.sin(o.heading * D2R), dx = x - o.x, dy = y - o.y;
+    const lx = c * dx - s * dy, ly = s * dx + c * dy;
+    let z = null, nl = [0, 0, 1];
+    if (o.type === 'building') {
+      if (Math.abs(lx) > o.dims.length / 2 || Math.abs(ly) > (o.dims.width ?? o.dims.length) / 2) return null;
+      z = o.z + o.dims.height;
+    } else {
+      if (!o.poly || o.poly.length < 3) return null;
+      for (const [A, B, C] of buildingShape(o).roof) {
+        const d = (B[1] - C[1]) * (A[0] - C[0]) + (C[0] - B[0]) * (A[1] - C[1]); if (Math.abs(d) < 1e-12) continue;
+        const w1 = ((B[1] - C[1]) * (lx - C[0]) + (C[0] - B[0]) * (ly - C[1])) / d, w2 = ((C[1] - A[1]) * (lx - C[0]) + (A[0] - C[0]) * (ly - C[1])) / d, w3 = 1 - w1 - w2;
+        if (w1 < -1e-9 || w2 < -1e-9 || w3 < -1e-9) continue;
+        const zz = w1 * A[2] + w2 * B[2] + w3 * C[2];
+        if (z !== null && zz <= z) continue;
+        const e1 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], e2 = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
+        let n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]]; const l = Math.hypot(...n) || 1;
+        n = n.map(v => v / l); if (n[2] < 0) n = n.map(v => -v);
+        z = zz; nl = n;
+      }
+      if (z === null) return null;
+      z += o.z;
+    }
+    // local → world for a direction: (c·x + s·y, −s·x + c·y)
+    const n = [c * nl[0] + s * nl[1], -s * nl[0] + c * nl[1], nl[2]];
+    return { z, n, ...planeAngles(n) };
+  }
+  /** Tilt (deg from horizontal) and the azimuth a plane with upward normal n faces (deg clockwise from north) */
+  function planeAngles(n) {
+    const tilt = Math.acos(Math.max(-1, Math.min(1, n[2]))) * R2D;
+    const azimuth = tilt < 1e-6 ? 180 : ((Math.atan2(n[0], n[1]) * R2D) % 360 + 360) % 360;
+    return { tilt, azimuth };
+  }
+  /** Least-squares plane z = a·x + b·y + c through points [[x, y, z]…] → {n, z(x, y), rms} or null */
+  function fitPlane(pts) {
+    if (!pts || pts.length < 3) return null;
+    const m = pts.length, cx = pts.reduce((t, p) => t + p[0], 0) / m, cy = pts.reduce((t, p) => t + p[1], 0) / m, cz = pts.reduce((t, p) => t + p[2], 0) / m;
+    let sxx = 0, sxy = 0, syy = 0, sxz = 0, syz = 0;
+    for (const [x, y, z] of pts) { const X = x - cx, Y = y - cy, Z = z - cz; sxx += X * X; sxy += X * Y; syy += Y * Y; sxz += X * Z; syz += Y * Z; }
+    const det = sxx * syy - sxy * sxy; if (Math.abs(det) < 1e-9) return null;
+    const a = (sxz * syy - syz * sxy) / det, b = (syz * sxx - sxz * sxy) / det;
+    const zAt = (x, y) => cz + a * (x - cx) + b * (y - cy);
+    const rms = Math.sqrt(pts.reduce((t, p) => t + (p[2] - zAt(p[0], p[1])) ** 2, 0) / m);
+    const l = Math.hypot(a, b, 1), n = [-a / l, -b / l, 1 / l];
+    return { n, zAt, rms, ...planeAngles(n) };
+  }
   /** World outline ([[x, y], …] ENU metres) of a drawn building, or null for other objects */
   function footprintWorld(o) {
     if (!o || !o.poly || o.poly.length < 3) return null;
@@ -638,7 +689,8 @@
       for (let c = 0; c < a.cols; c++) {
         const du = (c - (a.cols - 1) / 2) * pitchU;
         const dr = (r - (a.rows - 1) / 2) * a.rowPitch;
-        const cz = a.z + a.mountHeight + (a.panelL / 2) * Math.sin(tilt);
+        // flush on a pitched roof: each row sits on the roof plane, so rows further up the slope are higher
+        const cz = a.z + a.mountHeight + (a.panelL / 2) * Math.sin(tilt) + (a.flush ? dr * Math.tan(tilt) : 0);
         const center = [a.x + u[0] * du - f[0] * dr, a.y + u[1] * du - f[1] * dr, cz];
         const cells = [];
         for (let j = 0; j < a.cellsY; j++) for (let i = 0; i < a.cellsX; i++) {
@@ -789,7 +841,7 @@
     kastenHorizontal, transposeHDKR, transposeIsotropic, transposeBalint,
     convectiveCoeff, efficiency, thermalStep, thermalEquilibrium,
     rayBox, raySphere, rayEllipsoid, rayCylinder, rayCone, rayRect, OBJECT_TYPES, objectTransmission, objectTrace,
-    CATEGORIES, ROOF_TYPES, ROOF_PITCH, BUILDING_DEFAULTS, buildingSpec, buildingShape, syncBuilding, scaleBuilding, buildingFromOutline, footprintWorld, objectLabel, triangulate, polyArea,
+    CATEGORIES, ROOF_TYPES, ROOF_PITCH, BUILDING_DEFAULTS, buildingSpec, buildingShape, syncBuilding, scaleBuilding, buildingFromOutline, footprintWorld, objectLabel, triangulate, polyArea, roofAt, planeAngles, fitPlane,
     buildArrayGeometry, shadeCells, traceCells, shadeAttribution, HIT, horizonBlocked, metrics
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

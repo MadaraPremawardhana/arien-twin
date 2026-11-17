@@ -216,6 +216,9 @@
               <div class="field"><label for="arr-mount">Mount height (m)</label><input id="arr-mount" type="number" min="0" max="10" step="0.05"></div>
               <div class="field"><label for="arr-gap">Gap between panels (m)</label><input id="arr-gap" type="number" min="0" max="2" step="0.01"></div>
             </div>
+            <label class="toggle"><input type="checkbox" id="arr-snap" checked><span>Snap to the roof's angle when moved onto a roof</span></label>
+            <button class="btn" id="arr-snap-now">Snap to the roof here</button>
+            <p class="hint" id="arr-roof-note"></p>
           </fieldset>
           <fieldset><legend>Panel</legend>
             <div class="field"><label for="arr-model">Panel model</label><select id="arr-model"></select><p class="hint" id="arr-model-info"></p></div>

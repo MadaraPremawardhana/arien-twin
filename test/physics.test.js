@@ -58,6 +58,22 @@ near(P.airPathZ(Math.PI / 2), 1, 1e-9, 'z at zenith');
   ok(!!P.buildingFromOutline([[0, 0], [10, 10], [10, 0], [0, 10]]).error, 'crossing outline is refused');
   ok(!!P.buildingFromOutline([[0, 0], [1, 0], [1, 1]]).error, 'tiny outline is refused');
   const sc = P.scaleBuilding({ ...g, type: 'house' }, 20, 6); near(sc.dims.length, 20, 1e-6, 'stretching a building');
+  // roof under a point: a gable along x has its south slope facing 180° and north slope facing 0°
+  { const o = { ...g, type: 'house', z: 1 }, s1 = P.roofAt(o, 5, 1), n1 = P.roofAt(o, 5, 5);
+    near(s1.tilt, 35, 1e-6, 'south roof face tilt'); near(s1.azimuth, 180, 1e-6, 'south roof face azimuth');
+    near(n1.azimuth, 0, 1e-6, 'north roof face azimuth'); near(s1.z, 1 + 5.6 + k35 * 1, 1e-6, 'roof height under the point');
+    ok(P.roofAt(o, 20, 1) === null, 'no roof outside the plan');
+    const rr = P.buildingFromOutline([[0, 0], [7.0711, 7.0711], [4.2426, 9.8995], [-2.8284, 2.8284]]), fr = P.footprintWorld({ ...rr, type: 'house' });
+    const rs = P.roofAt({ ...rr, type: 'house', z: 0 }, rr.x + 0.5 * 0.7071, rr.y - 0.5 * 0.7071); // just south-east of the ridge
+    near(rs.azimuth, 135, 1e-6, 'rotated building: roof faces south-east'); void fr;
+    near(P.roofAt({ type: 'building', x: 0, y: 0, z: 2, heading: 0, dims: { length: 10, width: 8, height: 7 } }, 1, 1).z, 9, 1e-9, 'block: flat roof height');
+    const fp = P.fitPlane([[0, 0, 1], [1, 0, 1], [0, 1, 1 + Math.tan(30 / R2D)], [1, 1, 1 + Math.tan(30 / R2D)], [0.5, 0.5, 1 + 0.5 * Math.tan(30 / R2D)]]);
+    near(fp.tilt, 30, 1e-6, 'fitted plane tilt'); near(fp.azimuth, 180, 1e-6, 'fitted plane faces south'); near(fp.rms, 0, 1e-9, 'fitted plane rms');
+    // flush rows climb the roof: row centres stay on one plane
+    const fa = { x: 0, y: 0, z: 0, azimuth: 180, tilt: 30, rows: 3, cols: 1, panelW: 1, panelL: 1.7, colGap: 0, rowPitch: 1.7 * Math.cos(30 / R2D), mountHeight: 0.1, cellsX: 1, cellsY: 1, flush: true };
+    const fg = P.buildArrayGeometry(fa), cz = fg.panels.map(p => p.c[2]), cy = fg.panels.map(p => p.c[1]);
+    near((cz[2] - cz[0]) / (cy[2] - cy[0]), Math.tan(30 / R2D), 1e-9, 'flush rows lie on the roof slope');
+  }
   ok(P.buildingSpec({ floors: 500, roof: 'dome' }).floors === 60 && P.buildingSpec({ roof: 'dome' }).roof === 'gable', 'building settings are clamped');
 }
 
