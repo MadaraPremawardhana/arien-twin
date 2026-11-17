@@ -10,14 +10,17 @@ Browser digital twin of rooftop PV for [ARIEN](https://arien.base44.app/): a Ces
 
 Every cell of every panel is traced toward the sun, the browser version of the thesis's per-cell `LineTraceByChannel` (`ArienPhysics.traceCells`). Channels:
 
-- **Placed obstacles**: walls, buildings, chimneys, poles and tree trunks block; a tree or hedge canopy passes its **transparency** (0% = solid, as in the thesis); several canopies multiply.
+- **Placed objects**, in three groups: **Obstacles** (walls, chimneys, poles), **Foliage** (trees, conifers, hedges) and **Buildings** (drawn buildings and simple blocks). Walls, buildings, chimneys, poles and tree trunks block; a tree or hedge canopy passes its **transparency** (0% = solid, as in the thesis); several canopies multiply.
+- **Drawn buildings** (Objects → Buildings → *Draw a building*): set the floors and roof, click each corner of the floor area on the ground, then *Finish* (Enter, or click the first corner; Backspace removes the last corner, Esc cancels). Any simple outline works, L-shapes included.
+  - Walls rise to the eaves (floors × floor height, 2.8 m by default). The roof is flat, gable, hip or mono-pitch, with a pitch (35°, 30°, 15° by default) and a ridge along the long or short side. On non-rectangular plans the roof planes follow the plan's bounding rectangle.
+  - The 3D model and the shading traces use the same wall and roof triangles. *Match floors to the 3D tiles* sets the number of floors from the tiles; *Redraw the floor area* keeps the settings.
 - **Other panels**: row-to-row shading, opaque.
 - **3D tiles**: buildings, terrain and trees in the tiles, through the traced skyline of each panel (Shading → Trace skyline).
 
 A cell keeps the share of direct sun its trace lets through; with **4 rays per cell** (2×2) a cell can be partly covered. The panel's direct sun is the cell average; diffuse light is not shaded. The same traces run at every step of the 7-day forecast (15 minutes), the period run and the 12-month yield (hourly). Each run also computes the unshaded output, and charges the difference to whatever each cell's trace hit, weighted by the blocked direct sun.
 
-- **Shading → Line traces to the sun** (or **T**, or the HUD's **Traces** chip) draws the traces: green clear, red to the hit point on an obstacle, amber through a canopy, orange another panel, violet the 3D tiles. A readout shows how many cells are shaded now and what takes the light.
-- Changing an obstacle, its transparency or the trace settings re-runs the 7-day forecast by itself. The Dashboard's **Shading from obstacles** card gives kWh lost per cause for the next 7 days and for a year; today's chart shows output with and without shading; the PDF report lists the causes.
+- **Shading → Line traces to the sun** (or **T**, or the HUD's **Traces** chip) draws the traces: green clear, red to the hit point on an object, amber through a canopy, orange another panel, violet the 3D tiles. A readout shows how many cells are shaded now and what takes the light.
+- Changing an object, its transparency or the trace settings re-runs the 7-day forecast by itself. The Dashboard's **Shading from objects** card gives kWh lost per cause for the next 7 days and for a year; today's chart shows output with and without shading; the PDF report lists the causes.
 
 ## Dashboard and site report
 
@@ -52,7 +55,7 @@ Energy figures shown to people (planner cards, Analysis, Dashboard, report) are 
 **Design** at the top of the rail opens a satellite map for roughing out a layout. The panels are the same arrays the 3D twin simulates.
 
 - **Search address or postcode**: UK postcodes go to postcodes.io, addresses and places to OpenStreetMap Nominatim, then Open-Meteo. Coordinates (`51.99, -0.99`) work too. With Google 3D tiles shown, search uses Google's geocoder (through Cesium ion, or the Geocoding API on your Google key), as Google's terms require.
-- **Tools**: *Place* (one panel per click; drag to move, right-click to remove), *Rectangle* and *Freehand* (draw a roof area; it fills with rows of panels and re-fills when settings change), *Obstruction* (trees, hedges, walls, chimneys, buildings, poles, with height). Keys 1–4 switch tools; Delete removes the selection.
+- **Tools**: *Place* (one panel per click; drag to move, right-click to remove), *Rectangle* and *Freehand* (draw a roof area; it fills with rows of panels and re-fills when settings change), *Object* (obstacles and foliage with a height; for a building, set floors and roof, then click each corner of its floor area and press Enter or click the first corner). Keys 1–4 switch tools; Delete removes the selection.
 - **Left panel**: site name (blank = automatic name), panel model, tilt, azimuth, array summary with the annual shading loss, and Advanced (flush on roof or racked rows, portrait/landscape, row spacing, gaps, edge setback, mount height). Settings apply to the selected group, or to the whole design when nothing is selected.
 - **Simulate in 3D →** settles the panels onto the roofs in the 3D tiles, frames them, then runs the period. **Forecast** and **Est. yield** are here and on the twin's HUD. The side panel of period results is now called **Analysis**.
 - **Design kit**: *Analyse* sizes a roof area (panels, kWp and kWh a year from this site's last 12 months of weather). The request box understands short instructions such as "10 panels in London, south-facing", "5 kWp of Aiko panels in MK18 1EG", "east-west 16 panels", "add a tree 9 m south, 12 m tall", "estimate yield", "save as Garage roof". It is rules-based and runs in the browser; no AI service is called.
@@ -85,7 +88,7 @@ Values are STC from the manufacturers' datasheets (sources in `src/panels.js`). 
 When the twin runs inside the ARIEN web app, saved sites and results belong to the signed-in user, on every device. The web app is the `web/` frontend in this repository (`twin/` and `dashboard/` pages) or the Base44 site (`/twin`, `/digital-twin`); both keep sites in the same `SolarSite` records. `src/account.js` handles it:
 
 - The twin sends a `hello` to its parent page, only to the origins in `PARENTS` (this GitHub Pages origin for `web/`, and `https://arien.base44.app`). The page answers with the user's first name, plan and site list. It does every read and write under the account's access rules, so no password, token or email reaches the twin.
-- **Save** writes the twin's full scene (`twin_scene`), its fresh results (`twin_results`) and the plain fields the web app reads. Plain fields include panel count, kWp, tilt, azimuth, tariffs, install cost, `annual_kwh_cached`, and obstacles as footprints with heights. A matching name updates that site. On a plan with a site limit (Household: 1), a new name offers to replace the saved site or open Plans.
+- **Save** writes the twin's full scene (`twin_scene`), its fresh results (`twin_results`) and the plain fields the web app reads. Plain fields include panel count, kWp, tilt, azimuth, tariffs, install cost, `annual_kwh_cached`, and objects as footprints with heights (a drawn building's label carries its floors and roof, so it comes back as the same building). A matching name updates that site. On a plan with a site limit (Household: 1), a new name offers to replace the saved site or open Plans.
 - Forecast and yield runs on the open site are kept with it, unless the design has changed since it was saved.
 - Sites drawn in the web designer open in the twin. Panels are grouped into rows, the web panel models map to the panel library, obstructions become buildings, trees, walls and so on, and tariffs carry over. If a site was changed in the web designer after the twin saved it, the twin rebuilds it from the web layout.
 - Sites saved only in this browser are offered once for copying into the account.
@@ -131,9 +134,9 @@ Only the variables the thesis models use are requested: `temperature_2m`, `cloud
    - **Cesium ion** (cesium.com/ion → Access Tokens): a token with `assets:read`, only the assets you use (World Terrain 1, Bing imagery 2, OSM Buildings 96188, Google Photorealistic 2275207), and **Allowed URLs** = `https://madarapremawardhana.github.io` (domain only; a path-restricted token is refused).
    - **Google Maps Platform** (if used): restrict the key to the **Map Tiles API**, website restriction `https://madarapremawardhana.github.io/*`, and a daily quota.
 2. Open the site. On the connect screen paste the token → **Load 3D world** → **Load weather**.
-3. Place arrays and obstacles and choose models. Obstacles are real-size models with three levels of detail (close-up textured, mid, far); **Objects → Measure in the 3D view** and **Match height to the 3D tiles** size them against the photorealistic tiles.
+3. Place arrays and objects and choose models. Objects are real-size models with three levels of detail (close-up textured, mid, far); **Objects → Measure in the 3D view** and **Match height to the 3D tiles** size them against the photorealistic tiles.
 4. **World → Site settings for visitors (admin)** (or open `…/arien-twin/#admin`). Create a fine-grained GitHub token (GitHub → Settings → Developer settings → Fine-grained tokens) with access to **this repository only** and **Contents: Read and write**. Paste it in the panel, tick what to publish, press **Publish settings**. This commits `config.json`.
-5. Visitors then get your site, arrays, obstacles, models and world, and connect automatically. GitHub Pages caches for up to 10 minutes.
+5. Visitors then get your site, arrays, objects, models and world, and connect automatically. GitHub Pages caches for up to 10 minutes.
 
 Published keys are readable by visitors' browsers, which is why step 1 restricts them. Do not publish an Open-Meteo commercial key: it cannot be limited to one website. `…/#setup` skips auto-connect so you can test with other keys.
 
@@ -187,7 +190,7 @@ All in `src/physics.js`, unit-tested in `test/physics.test.js` (146 checks, incl
 | Real-World GHI | Open-Meteo GHI/DNI/DHI, isotropic transposition | Check against thesis transposition |
 | Hourly → instantaneous | Open-Meteo radiation is a backward hourly mean; converted to clearness index and diffuse fraction at the half hour, then rebuilt from the instantaneous sun | Implementation assumption |
 | Thermal | Bálint, Fodor, Magyar (2019) ODE, solved exactly per step; h = 5.7 + 3.8·v; heat capacity 9,600 J/m²K; efficiency −0.35 %/°C default | h(v) and heat capacity are assumptions |
-| Shading | Beam only; line trace per cell (or 2×2 per cell) to the sun against other panels, placed obstacles (canopy transparency, multiplied through several canopies) and the 3D-tile skyline; losses charged per cause | No bypass-diode or mismatch model; diffuse not shaded; multiplying canopy transparencies is our rule (the thesis treats canopies as solid) |
+| Shading | Beam only; line trace per cell (or 2×2 per cell) to the sun against other panels, placed objects and drawn buildings (canopy transparency, multiplied through several canopies) and the 3D-tile skyline; losses charged per cause | No bypass-diode or mismatch model; diffuse not shaded; multiplying canopy transparencies is our rule (the thesis treats canopies as solid) |
 | Seasonal rule | Summer (Jun–Aug) → RW-GHI, spring (Mar–May) → HDKR, autumn/winter → K–N; flipped for the southern hemisphere | From the company brief |
 
 ## Layout
@@ -203,15 +206,16 @@ src/finance.js     household profile, self-consumption (battery-ready), cash flo
 src/charts.js      shared Chart.js styling
 src/dashboard.js   Dashboard tab
 src/report.js      PDF site report (jsPDF, loaded on first use)
-src/models.js      obstacle models (trees, hedges, walls, chimneys, buildings, poles) at 3 levels of detail, exported as glTF
-src/app.js         Cesium world, arrays/obstacles, simulation loop, visuals, UI
+src/models.js      object models (trees, hedges, walls, chimneys, buildings, drawn buildings, poles) at 3 levels of detail, exported as glTF
+src/app.js         Cesium world, arrays/objects, simulation loop, visuals, UI
 src/template.html  markup; src/style.css styles
 build.py           inlines everything into index.html (what GitHub Pages serves)
 test/physics.test.js   node test/physics.test.js
 test/account.test.js   node test/account.test.js
 test/account_check.py  the twin inside a copy of the web app's /twin page (handler as published 10 Nov 2026)
 test/run_browser.py    headless Chrome check with mocked CDN, tiles and weather
-test/models_check.py   renders every obstacle at each level of detail
+test/models_check.py   renders every object at each level of detail
+test/buildings_check.py  object groups, drawing buildings in 3D and on the map, floors and roof, save and reopen
 tools/fetch_weather.py fills the weather-data branch (run by the workflow)
 ```
 

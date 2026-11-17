@@ -121,8 +121,8 @@
         ${shadeRows(y.shadingBy, yLost, ac * (1 - a.firstYearDegradation / 100), 'kWh/yr')}</div>
     </div>
     <div class="row"><button class="btn" id="db-show-traces"><svg><use href="#i-shade"/></svg>See the line traces in 3D</button>
-      <span class="hint">${nObs} obstacle${nObs === 1 ? '' : 's'} · ${S.shade.samples === 2 ? '4 rays' : '1 ray'} per cell · ${S.shade.useTiles ? '3D-tile skyline included' : '3D tiles not included (trace the skyline in the 3D view)'}</span></div>
-    <p class="hint">Each cell is traced toward the sun at every forecast step (15 minutes) and every hour of the year. A cell keeps the direct sun its trace lets through: none past walls, buildings, poles and other panels, the obstacle's transparency through a canopy. The panels' loss is the cell average, and each obstacle is charged for the cells it blocks. Diffuse light is not shaded.</p>`;
+      <span class="hint">${nObs} object${nObs === 1 ? '' : 's'} · ${S.shade.samples === 2 ? '4 rays' : '1 ray'} per cell · ${S.shade.useTiles ? '3D-tile skyline included' : '3D tiles not included (trace the skyline in the 3D view)'}</span></div>
+    <p class="hint">Each cell is traced toward the sun at every forecast step (15 minutes) and every hour of the year. A cell keeps the direct sun its trace lets through: none past walls, buildings, poles and other panels, the object's transparency through a canopy. The panels' loss is the cell average, and each object is charged for the cells it blocks. Diffuse light is not shaded.</p>`;
   }
   function financeHtml(m) {
     const segs = [5, 10, 15, 20].map(n => `<button data-h="${n}" aria-pressed="${n === horizon}">${n} years</button>`).join('');
@@ -192,7 +192,7 @@
       ${card('db-overview', 'Overview', overviewHtml(m), 'span-12')}
       ${card('db-forecast', 'Today’s forecast', forecastHtml(m), 'span-7')}
       ${card('db-reco', 'Recommendations', recoHtml(m), 'span-5')}
-      ${card('db-shading', 'Shading from obstacles', shadingHtml(m), 'span-12')}
+      ${card('db-shading', 'Shading from objects', shadingHtml(m), 'span-12')}
       ${card('db-finance', 'Financial overview', financeHtml(m), 'span-12')}
       ${card('db-monthly', 'Monthly production', monthlyHtml(m), 'span-12')}
       ${card('db-assume', 'Assumptions', assumptionsHtml(m), 'span-12')}
@@ -259,12 +259,12 @@
     });
     return {
       title: api.siteLabel(), site: { ...S.site }, generatedAt: new Date(), weatherSources: api.weatherSources(),
-      design: m.d, zones: S.zones.map(z => ({ name: z.name, poly: z.poly })), objects: S.objects.map(o => ({ type: o.type, label: api.PH.OBJECT_TYPES[o.type].label, x: o.x, y: o.y, heading: o.heading, dims: { ...o.dims } })),
+      design: m.d, zones: S.zones.map(z => ({ name: z.name, poly: z.poly })), objects: S.objects.map(o => ({ type: o.type, label: api.PH.objectLabel(o), x: o.x, y: o.y, heading: o.heading, dims: { ...o.dims }, poly: api.PH.footprintWorld(o) })),
       kpis: { kwp: m.kwp, panels: m.d.panels, production: m.y1.generation, savings: m.y1.selfSaving + m.y1.exportIncome - a.maintenance, selfSaving: m.y1.selfSaving, exportIncome: m.y1.exportIncome,
         selfUsed: m.y1.selfUsed, exported: m.y1.exported, co2: m.y1.generation * a.carbonFactor, payback: m.cf.payback, roi: m.life.roi, net: m.life.net, capex: m.cf.capex, lifetime: m.cf.lifetime, selfUseShare: m.sc.selfUseShare, specific: m.y1.generation / Math.max(m.kwp, 1e-6) },
       shading: { year: { pct: m.y.shadingLoss || 0, by: (m.y.shadingBy || []).map(r => ({ label: r.label, kwh: r.kwh * (1 - a.systemLosses / 100) * (1 - a.firstYearDegradation / 100) })) },
         week: m.f && m.f.shading ? { pct: m.f.shading.pct, kwh: m.f.shading.lostKWh * (1 - a.systemLosses / 100), by: m.f.shading.by.map(r => ({ label: r.label, kwh: r.kwh * (1 - a.systemLosses / 100) })) } : null,
-        samples: S.shade.samples, tiles: !!S.shade.useTiles, objects: S.objects.map(o => ({ label: api.PH.OBJECT_TYPES[o.type].label, h: o.dims.height, transparency: api.PH.OBJECT_TYPES[o.type].porous ? (o.porosity || 0) : 0 })) },
+        samples: S.shade.samples, tiles: !!S.shade.useTiles, objects: S.objects.map(o => ({ label: api.PH.objectLabel(o), h: o.dims.height, transparency: api.PH.OBJECT_TYPES[o.type].porous ? (o.porosity || 0) : 0 })) },
       monthly: m.monthly, monthsLabel: api.MONTHS, yieldInfo: { model: api.modelLabel(m.y.model), start: m.y.start, end: m.y.end, shadingLoss: m.y.shadingLoss, dcTotal: m.y.total, systemLosses: a.systemLosses },
       forecast: m.f ? { model: api.modelLabel(m.f.model), days: m.f.days.map(d => ({ t: d.t, label: api.fmtDay(d.t), kwh: d.kwh * (1 - a.systemLosses / 100) })), source: m.f.source } : null,
       finance: { horizons: [5, 10, 15, 20, m.cf.lifetime].map(n => m.cf.totals(n)), years: m.cf.years.slice(0, m.cf.lifetime), capex: m.cf.capex, payback: m.cf.payback },

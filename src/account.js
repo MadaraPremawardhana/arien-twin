@@ -26,11 +26,17 @@
   const toLL = (site, x, y) => ({ lat: round(site.lat + y / M_PER_DEG, 8), lng: round(site.lon + x / kx(site), 8) });
   const toXY = (site, p) => ({ x: (Number(p.lng) - site.lon) * kx(site), y: (Number(p.lat) - site.lat) * M_PER_DEG });
 
-  // ---------- obstacles <-> the web app's obstructions: [{polygon:[{lat,lng}…≥3], height_m > 0, label}]
+  const PHY = () => root.ArienPhysics || (typeof require === 'function' ? require('./physics.js') : null);
+  // ---------- objects <-> the web app's obstructions: [{polygon:[{lat,lng}…≥3], height_m > 0, label}]
   const ROUND = { tree: true, conifer: true, pole: true };
   const LABELS = { tree: 'Broadleaf tree', conifer: 'Conifer', hedge: 'Hedge', wall: 'Wall', chimney: 'Chimney', building: 'Building', pole: 'Pole' };
   /** A twin obstacle as a footprint polygon with its height above the ground */
   function objectToObstruction(o, site, groundZ = 0) {
+    if (o.type === 'house' && Array.isArray(o.poly) && o.poly.length >= 3 && PHY()) { // drawn building: its own floor plan, floors and roof in the label
+      const P = PHY(), sp = P.buildingSpec(o);
+      return { polygon: P.footprintWorld(o).map(([x, y]) => toLL(site, x, y)), height_m: round(Math.max(0.1, num(o.z, 0) - groundZ + num(o.dims && o.dims.height, 1)), 2),
+        label: `Building (${sp.floors} floor${sp.floors === 1 ? '' : 's'}, ${P.ROOF_TYPES[sp.roof].toLowerCase()} roof${sp.roof === 'flat' ? '' : ` ${Math.round(sp.pitch)}°`})` };
+    }
     const L = num(o.dims && o.dims.length, 1), W = num(o.dims && o.dims.width, L), pts = [];
     if (ROUND[o.type]) for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; pts.push([L / 2 * Math.cos(a), L / 2 * Math.sin(a)]); }
     else pts.push([-L / 2, -W / 2], [L / 2, -W / 2], [L / 2, W / 2], [-L / 2, W / 2]);
@@ -57,6 +63,18 @@
     const h = num(ob.height_m, 0);
     if (pts.length < 3 || !(h > 0)) return null;
     const type = typeFromLabel(ob.label);
+    // a building saved by the twin with its floors and roof comes back as the same drawn building
+    const bm = /building\s*\((\d+)\s*floors?,\s*([a-z-]+)\s*roof(?:\s*(\d+(?:\.\d+)?)°)?/i.exec(String(ob.label || ''));
+    if (bm && PHY()) {
+      const P = PHY(), roof = Object.keys(P.ROOF_TYPES).find(k => P.ROOF_TYPES[k].toLowerCase() === bm[2].toLowerCase()) || 'gable';
+      const b = P.buildingFromOutline(pts.map(p => [p.x, p.y]), { floors: Number(bm[1]), roof, pitch: bm[3] != null ? Number(bm[3]) : P.ROOF_PITCH[roof] });
+      if (!b.error) {
+        // keep the saved height: whole floors under the roof
+        const sh = P.buildingShape(b), fl = Math.max(1, Math.round((h - (sh.top - sh.eaves)) / b.floorHeight));
+        if (fl !== b.floors) { b.floors = fl; P.syncBuilding(b); }
+        return { type: 'house', ...b, z: 0, porosity: 0, worldSrc: 'none' };
+      }
+    }
     // orient on the longest edge, measure the footprint in that frame
     let best = 0, e = [1, 0];
     for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length], d = Math.hypot(b.x - a.x, b.y - a.y); if (d > best) { best = d; e = [b.x - a.x, b.y - a.y]; } }

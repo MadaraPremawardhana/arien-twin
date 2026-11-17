@@ -1,6 +1,7 @@
 /* ARIEN Design planner — a 2D satellite map for roughing out a PV layout before simulating it in the
  * 3D twin. Panels placed here are the same arrays the twin simulates (shared state, same physics).
- * Tools: Place (single panel), Rectangle and Freehand (roof areas filled with panels), Obstruction.
+ * Tools: Place (single panel), Rectangle and Freehand (roof areas filled with panels), Object (obstacles, foliage,
+ * buildings; a building is drawn corner by corner as its floor area).
  * The Design kit sizes a roof area and understands short typed requests ("10 panels in London,
  * south-facing"). It is rules-based and runs in the browser; no AI service is called.
  * Needs Leaflet 1.9 (window.L). Browser: window.ArienPlanner. */
@@ -150,7 +151,7 @@
   function commit() { api.changed(); redraw(); refreshSummary(); }
 
   // ---------------------------------------------------------------- drawing on the map
-  const COL = { panel: '#1b2d47', panelEdge: '#9fb3c4', sel: '#f3b23c', zone: '#f3b23c', tree: '#5fae63', conifer: '#3f8a55', hedge: '#5f9b4a', building: '#c9c2b6', wall: '#b9ad98', chimney: '#b36b55', pole: '#a5825e' };
+  const COL = { panel: '#1b2d47', panelEdge: '#9fb3c4', sel: '#f3b23c', zone: '#f3b23c', tree: '#5fae63', conifer: '#3f8a55', hedge: '#5f9b4a', building: '#c9c2b6', house: '#d9cdb8', wall: '#b9ad98', chimney: '#b36b55', pole: '#a5825e' };
   function redraw() {
     if (!ready) return;
     ['zones', 'panels', 'objects'].forEach(k => layers[k].clearLayers());
@@ -172,13 +173,15 @@
     for (const o of S.objects) {
       const key = 'o:' + o.id, on = sel === key, col = COL[o.type] || '#ccc', T = PH.OBJECT_TYPES[o.type];
       let shape;
-      if (o.type === 'tree' || o.type === 'conifer' || o.type === 'pole') shape = L.circle(llOf([o.x, o.y]), { radius: Math.max(0.3, o.dims.length / 2), color: on ? COL.sel : col, weight: on ? 2.4 : 1.4, fillColor: col, fillOpacity: 0.35, renderer: layers.canvas, bubblingMouseEvents: false });
+      const fp = o.type === 'house' && PH.footprintWorld(o);
+      if (fp) shape = L.polygon(fp.map(llOf), { color: on ? COL.sel : col, weight: on ? 2.4 : 1.4, fillColor: col, fillOpacity: 0.45, renderer: layers.canvas, bubblingMouseEvents: false });
+      else if (o.type === 'tree' || o.type === 'conifer' || o.type === 'pole') shape = L.circle(llOf([o.x, o.y]), { radius: Math.max(0.3, o.dims.length / 2), color: on ? COL.sel : col, weight: on ? 2.4 : 1.4, fillColor: col, fillOpacity: 0.35, renderer: layers.canvas, bubblingMouseEvents: false });
       else {
         const h = -o.heading * D2R, c = Math.cos(h), s = Math.sin(h), hl = o.dims.length / 2, hw = (o.dims.width ?? o.dims.length) / 2;
         const pts = [[-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]].map(([x, y]) => [o.x + x * c - y * s, o.y + x * s + y * c]);
         shape = L.polygon(pts.map(llOf), { color: on ? COL.sel : col, weight: on ? 2.4 : 1.4, fillColor: col, fillOpacity: 0.4, renderer: layers.canvas, bubblingMouseEvents: false });
       }
-      shape.bindTooltip(`${T.label} · ${o.dims.height.toFixed(1)} m high`, { direction: 'top', sticky: true, className: 'pl-tip' });
+      shape.bindTooltip(`${api.escapeHtml(PH.objectLabel(o))} · ${o.dims.height.toFixed(1)} m high`, { direction: 'top', sticky: true, className: 'pl-tip' });
       bindGroup(shape, key); layers.objects.addLayer(shape);
     }
     layers.site.setLatLng([S.site.lat, S.site.lon]);
@@ -191,7 +194,7 @@
       map.dragging.disable();
     });
     layer.on('click', (e) => { L.DomEvent.stopPropagation(e); suppressClick = true; setTimeout(() => { suppressClick = false; }, 0); });
-    layer.on('contextmenu', (e) => { L.DomEvent.stopPropagation(e); L.DomEvent.preventDefault(e.originalEvent); removeGroup(key); api.toast(key.startsWith('o:') ? 'Obstruction removed.' : 'Panels removed.', 'info', 2500); });
+    layer.on('contextmenu', (e) => { L.DomEvent.stopPropagation(e); L.DomEvent.preventDefault(e.originalEvent); removeGroup(key); api.toast(key.startsWith('o:') ? 'Object removed.' : 'Panels removed.', 'info', 2500); });
   }
   function translateGroup(key, dx, dy) {
     if (key.startsWith('o:')) { const o = S.objects.find(x => x.id === key.slice(2)); if (o) { o.x += dx; o.y += dy; } return; }
@@ -213,6 +216,7 @@
       drag.moved = true; translateGroup(drag.key, dx, dy); drag.last = p; redrawSoon(); return;
     }
     if (!drawing) return;
+    if (drawing.kind === 'bld') { drawing.shape.setLatLngs(drawing.pts.concat([e.latlng], drawing.pts.length > 1 ? [drawing.pts[0]] : [])); return; }
     if (drawing.kind === 'rect') drawing.shape.setBounds(L.latLngBounds(drawing.a, e.latlng));
     else { const last = drawing.pts[drawing.pts.length - 1]; if (map.latLngToContainerPoint(last).distanceTo(map.latLngToContainerPoint(e.latlng)) > 4) { drawing.pts.push(e.latlng); drawing.shape.setLatLngs(drawing.pts); } }
   }
@@ -227,7 +231,7 @@
       } else { sel = sel === d.key ? null : d.key; syncInputs(); redraw(); refreshSummary(); }
       return;
     }
-    if (!drawing) return;
+    if (!drawing || drawing.kind === 'bld') return;
     const dr = drawing; drawing = null; map.removeLayer(dr.shape);
     suppressClick = true; setTimeout(() => { suppressClick = false; }, 0);
     let poly;
@@ -245,14 +249,41 @@
     commit();
   }
   function onMapClick(e) {
-    if (suppressClick || drawing) return;
+    if (suppressClick || (drawing && drawing.kind !== 'bld')) return;
     const p = enOf(e.latlng);
+    if (tool === 'obst' && obType === 'house') { buildingCorner(e.latlng); return; }
     if (tool === 'place') { const a = placeSingle(p[0], p[1]); sel = null; commit(); return a; }
     if (tool === 'obst') {
       const o = api.newObject(obType, p[0], p[1]); const h = Number($('#pl-ob-h').value); if (h > 0) { o.dims.height = h; api.updateObject(o, true); }
       const tp = Number($('#pl-ob-tr').value); if (PH.OBJECT_TYPES[obType].porous && tp > 0) o.porosity = clamp(tp, 0, 90) / 100;
       sel = 'o:' + o.id; commit(); return o;
     }
+  }
+
+  // a building's floor area: click each corner, then click the first corner, double-click or press Enter
+  function buildingCorner(ll) {
+    if (!drawing) drawing = { kind: 'bld', pts: [], shape: L.polyline([], { color: COL.zone, weight: 2.2, dashArray: '6 4' }).addTo(map), marks: L.layerGroup().addTo(map) };
+    const pts = drawing.pts;
+    if (pts.length >= 3 && map.latLngToContainerPoint(pts[0]).distanceTo(map.latLngToContainerPoint(ll)) < 12) { finishBuilding(); return; }
+    pts.push(ll); L.circleMarker(ll, { radius: pts.length === 1 ? 5 : 3.5, color: '#131e26', weight: 1, fillColor: COL.zone, fillOpacity: 1, interactive: false }).addTo(drawing.marks);
+    drawing.shape.setLatLngs(pts.length > 1 ? pts.concat([pts[0]]) : pts);
+    $('#pl-hint').textContent = pts.length < 3 ? `Corner ${pts.length} · click the next corner` : `${pts.length} corners · click the first corner, double-click or press Enter to finish · Backspace undoes · Esc cancels`;
+  }
+  function cancelBuilding() { if (drawing && drawing.kind === 'bld') { map.removeLayer(drawing.shape); map.removeLayer(drawing.marks); drawing = null; $('#pl-hint').textContent = HINTS.obst(); } }
+  function undoCorner() {
+    if (!drawing || drawing.kind !== 'bld') return;
+    const pts = drawing.pts; pts.pop(); const ms = drawing.marks.getLayers(); if (ms.length) drawing.marks.removeLayer(ms[ms.length - 1]);
+    if (!pts.length) { cancelBuilding(); return; }
+    drawing.shape.setLatLngs(pts.length > 1 ? pts.concat([pts[0]]) : pts);
+  }
+  function finishBuilding() {
+    if (!drawing || drawing.kind !== 'bld') return;
+    if (drawing.pts.length < 3) { api.toast('Click at least three corners of the floor area.', 'warn'); return; }
+    const pts = drawing.pts.map(enOf); cancelBuilding();
+    const o = api.newBuilding(pts, { floors: Math.round(clamp(Number($('#pl-ob-fl').value) || 2, 1, 60)), roof: $('#pl-ob-rf').value });
+    if (!o || o.error) { api.toast((o && o.error) || 'Could not make a building from that outline.', 'warn', 5000); return; }
+    sel = 'o:' + o.id; commit();
+    api.toast(`${PH.objectLabel(o)}: ${Math.abs(PH.polyArea(o.poly)).toFixed(0)} m² per floor, ${o.dims.height.toFixed(1)} m high.`, 'ok', 4000);
   }
 
   // ---------------------------------------------------------------- left panel
@@ -285,6 +316,10 @@
     const nGroups = new Set(S.arrays.map(groupKey)).size;
     $('#pl-editing').innerHTML = z ? `Editing <b>${api.escapeHtml(z.name)}</b> · <button class="link" id="pl-desel">whole design</button>`
       : a ? `Editing <b>${api.escapeHtml(a.name)}</b> · <button class="link" id="pl-desel">whole design</button>`
+      : o && o.type === 'house' ? `Selected <b>${api.escapeHtml(PH.objectLabel(o))}</b> · right-click or Delete removes it · <button class="link" id="pl-desel">deselect</button>
+          <span class="pl-obj-ed"><label>Floors<input type="number" id="pl-sel-fl" min="1" max="60" step="1" value="${o.floors}"></label>
+          <label>Roof<select id="pl-sel-rf">${Object.entries(PH.ROOF_TYPES).map(([k, l]) => `<option value="${k}"${k === o.roof ? ' selected' : ''}>${l}</option>`).join('')}</select></label>
+          <span class="hint pl-obj-note">${o.dims.height.toFixed(1)} m high · ${Math.abs(PH.polyArea(o.poly)).toFixed(0)} m² per floor · pitch and floor height in the 3D view</span></span>`
       : o ? `Selected <b>${PH.OBJECT_TYPES[o.type].label}</b> · right-click or Delete removes it · <button class="link" id="pl-desel">deselect</button>
           <span class="pl-obj-ed"><label>Height m<input type="number" id="pl-sel-h" min="0.2" max="80" step="0.5" value="${o.dims.height.toFixed(1)}"></label>
           <label>${PH.OBJECT_TYPES[o.type].dimLabels[0]} m<input type="number" id="pl-sel-l" min="0.1" max="80" step="0.1" value="${o.dims.length.toFixed(1)}"></label>
@@ -293,7 +328,9 @@
     const ds = $('#pl-desel'); if (ds) ds.onclick = () => { sel = null; syncInputs(); redraw(); };
     if (o) {
       const upd = (fn, rebuild) => { fn(); api.updateObject(o, rebuild); commit(); };
-      const hEl = $('#pl-sel-h'), lEl = $('#pl-sel-l'), tEl = $('#pl-sel-tr');
+      const hEl = $('#pl-sel-h'), lEl = $('#pl-sel-l'), tEl = $('#pl-sel-tr'), fEl = $('#pl-sel-fl'), rEl = $('#pl-sel-rf');
+      if (fEl) fEl.onchange = () => { const v = Math.round(Number(fEl.value)); if (v >= 1) upd(() => { o.floors = Math.min(60, v); PH.syncBuilding(o); }, true); syncInputs(); };
+      if (rEl) rEl.onchange = () => { upd(() => { o.roof = rEl.value; o.pitch = PH.ROOF_PITCH[o.roof]; PH.syncBuilding(o); }, true); syncInputs(); };
       if (hEl) hEl.onchange = () => { const v = Number(hEl.value); if (v > 0) upd(() => { o.dims.height = v; }, true); };
       if (lEl) lEl.onchange = () => { const v = Number(lEl.value); if (v > 0) upd(() => { o.dims.length = v; if (!PH.OBJECT_TYPES[o.type].dimLabels[1]) o.dims.width = v; }, true); };
       if (tEl) tEl.onchange = () => { const v = Number(tEl.value); if (v >= 0) upd(() => { o.porosity = clamp(v, 0, 90) / 100; }, false); };
@@ -446,7 +483,7 @@
   }
 
   // ---------------------------------------------------------------- map setup
-  /** Fit the map to the design (panels, roof areas, obstructions), or centre on the site when empty */
+  /** Fit the map to the design (panels, roof areas, objects), or centre on the site when empty */
   function focusDesign(animate = true) {
     if (!map) return;
     const pts = [];
@@ -467,13 +504,16 @@
     place: 'Click to place a panel · Drag to move · Right-click to remove',
     rect: 'Drag a rectangle over the roof · it fills with panels · Place tool to pan',
     free: 'Drag around the roof outline · release to fill it · Place tool to pan',
-    obst: 'Click to place an obstruction · Drag to move · Right-click to remove'
+    obst: () => obType === 'house' ? 'Click each corner of the building\'s floor area · click the first corner or press Enter to finish' : 'Click to place an object · Drag to move · Right-click to remove'
   };
+  /** Keep the Satellite / Map switch just under the tool panel, whose height changes with the object fields */
+  function placeLayers() { const t = $('#pl-tools'), l = $('#pl-layers'); if (t && l && t.offsetHeight) l.style.top = (t.offsetTop + t.offsetHeight + 8) + 'px'; }
   function setTool(t) {
+    if (t !== 'obst') cancelBuilding();
     tool = t;
     $$('#pl-tools [data-tool]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
-    $('#pl-obwrap').hidden = t !== 'obst';
-    $('#pl-hint').textContent = HINTS[t];
+    $('#pl-obwrap').hidden = t !== 'obst'; placeLayers();
+    $('#pl-hint').textContent = typeof HINTS[t] === 'function' ? HINTS[t]() : HINTS[t];
     if (!map) return;
     if (t === 'rect' || t === 'free') map.dragging.disable(); else map.dragging.enable();
     map.getContainer().style.cursor = t === 'place' ? '' : 'crosshair';
@@ -489,8 +529,9 @@
     setBase(base);
     map.on('mousedown', onMouseDown); map.on('mousemove', onMouseMove); map.on('mouseup', onMouseUp); map.on('click', onMapClick);
     map.on('contextmenu', (e) => L.DomEvent.preventDefault(e.originalEvent));
+    map.on('dblclick', () => { if (drawing && drawing.kind === 'bld') finishBuilding(); });
     document.addEventListener('mouseup', (e) => { if (drag || drawing) onMouseUp({ latlng: map.mouseEventToLatLng(e), originalEvent: e }); });
-    ready = true; setTool(tool);
+    ready = true; setTool(tool); setTimeout(placeLayers, 0);
   }
 
   function wire() {
@@ -508,8 +549,14 @@
     $('#pl-setback').addEventListener('change', (e) => { const v = +e.target.value; if (v >= 0) applySettings({ setback: clamp(v, 0, 5) }); });
     $('#pl-mounth').addEventListener('change', (e) => { const v = +e.target.value; if (v >= 0) applySettings({ mountHeight: clamp(v, 0, 5) }); });
     $('#pl-tools').addEventListener('click', (e) => { const b = e.target.closest('[data-tool]'); if (b) setTool(b.dataset.tool); });
-    $('#pl-obtype').innerHTML = Object.entries(PH.OBJECT_TYPES).map(([k, t]) => `<option value="${k}">${t.label}</option>`).join('');
-    $('#pl-obtype').addEventListener('change', (e) => { obType = e.target.value; $('#pl-ob-h').value = PH.OBJECT_TYPES[obType].dims.height; $('#pl-ob-tr-wrap').hidden = !PH.OBJECT_TYPES[obType].porous; });
+    $('#pl-obtype').innerHTML = PH.CATEGORIES.map(c => `<optgroup label="${c.label}">${Object.entries(PH.OBJECT_TYPES).filter(([, t]) => t.category === c.key)
+      .map(([k, t]) => `<option value="${k}">${k === 'house' ? 'Building (draw floor area)' : t.label}</option>`).join('')}</optgroup>`).join('');
+    $('#pl-ob-rf').innerHTML = Object.entries(PH.ROOF_TYPES).map(([k, l]) => `<option value="${k}"${k === PH.BUILDING_DEFAULTS.roof ? ' selected' : ''}>${l}</option>`).join('');
+    $('#pl-obtype').addEventListener('change', (e) => {
+      obType = e.target.value; cancelBuilding(); const T = PH.OBJECT_TYPES[obType], isB = obType === 'house';
+      $('#pl-ob-h').value = T.dims.height; $('#pl-ob-h').parentElement.hidden = isB; $('#pl-ob-tr-wrap').hidden = !T.porous;
+      $('#pl-ob-fl-wrap').hidden = !isB; $('#pl-ob-rf-wrap').hidden = !isB; $('#pl-hint').textContent = HINTS.obst(); placeLayers();
+    });
     $('#pl-ob-h').value = PH.OBJECT_TYPES[obType].dims.height;
     $('#pl-layers').addEventListener('click', (e) => { const b = e.target.closest('[data-layer]'); if (b) setBase(b.dataset.layer); });
     $('#pl-locate').addEventListener('click', () => map && map.setView([S.site.lat, S.site.lon], Math.max(map.getZoom(), 19)));
@@ -537,6 +584,11 @@
     $('#pl-chat-form').addEventListener('submit', (e) => { e.preventDefault(); const q = $('#pl-chat-q').value.trim(); if (!q) return; $('#pl-chat-q').value = ''; handleRequest(q); });
     document.addEventListener('keydown', (e) => {
       if (S.view !== 'design' || e.target.closest('input, select, textarea')) return;
+      if (drawing && drawing.kind === 'bld') {
+        if (e.key === 'Enter') { e.preventDefault(); finishBuilding(); return; }
+        if (e.key === 'Escape') { cancelBuilding(); return; }
+        if (e.key === 'Backspace' || e.key === 'Delete') { e.preventDefault(); undoCorner(); return; }
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); removeGroup(sel); }
       if (e.key === 'Escape') { sel = null; syncInputs(); redraw(); }
       const keyTool = { 1: 'place', 2: 'rect', 3: 'free', 4: 'obst' }[e.key]; if (keyTool) setTool(keyTool);

@@ -90,7 +90,7 @@
     <button data-panel="site" title="Location (1)"><svg><use href="#i-site"/></svg><span>Site</span></button>
     <button data-panel="time" title="Weather period (2)"><svg><use href="#i-time"/></svg><span>Weather</span></button>
     <button data-panel="panels" title="Solar arrays (3)"><svg><use href="#i-panels"/></svg><span>Arrays</span></button>
-    <button data-panel="objects" title="Obstacles (4)"><svg><use href="#i-objects"/></svg><span>Objects</span></button>
+    <button data-panel="objects" title="Objects (4)"><svg><use href="#i-objects"/></svg><span>Objects</span></button>
     <button data-panel="models" title="Irradiance models (5)"><svg><use href="#i-models"/></svg><span>Models</span></button>
     <button data-panel="shading" title="Shading (6)"><svg><use href="#i-shade"/></svg><span>Shading</span></button>
     <button data-panel="meta" title="Meta-learning (7)"><svg><use href="#i-meta"/></svg><span>Meta</span></button>
@@ -125,7 +125,7 @@
           <button class="btn primary" id="site-go">Go to coordinates</button>
           <button class="btn" id="site-reset">Default site</button>
         </div>
-        <p class="hint">Moving to a new site clears its arrays and obstacles. Save the site below first if you want to keep them.</p>
+        <p class="hint">Moving to a new site clears its arrays and objects. Save the site below first if you want to keep them.</p>
         <fieldset><legend>Saved sites</legend>
           <div class="row"><input id="site-name" class="site-name-input" type="text" placeholder="Auto-named" aria-label="Site name" maxlength="80"><button class="btn primary" id="site-save"><svg><use href="#i-save"/></svg>Save</button></div>
           <p class="hint" id="site-save-hint">Leave the name empty for one made from the place, size and orientation. Saved in this browser; share with <b>World → Site settings for visitors</b> or <b>Save scene</b>.</p>
@@ -240,10 +240,10 @@
         </div>
       </section>
 
-      <!-- OBSTACLES -->
+      <!-- OBJECTS -->
       <section data-pane="objects">
-        <p class="hint">Pick an object, then click where it stands. Buildings and trees inside the 3D tiles are covered under <b>Shading</b>.</p>
-        <div class="lib" id="obj-lib"></div>
+        <p class="hint">Pick an object, then click where it stands, or draw a building's floor area. Buildings and trees already in the 3D tiles are covered under <b>Shading</b>.</p>
+        <div id="obj-lib"></div>
         <div class="row"><button class="btn" id="obj-measure">Measure in the 3D view</button></div>
         <p class="hint" id="obj-measure-out">Click two points on a roof, tree or wall to read distance and height in metres.</p>
         <ul class="list" id="obj-list"></ul>
@@ -256,6 +256,18 @@
             </div>
           </div>
           <div class="split3" id="obj-dims"></div>
+          <div id="obj-bld" hidden>
+            <div class="split3">
+              <div class="field"><label for="bld-e-floors">Floors</label><input id="bld-e-floors" type="number" min="1" max="60" step="1"></div>
+              <div class="field"><label for="bld-e-fh">Floor height (m)</label><input id="bld-e-fh" type="number" min="2" max="6" step="0.1"></div>
+              <div class="field"><label for="bld-e-roof">Roof</label><select id="bld-e-roof"></select></div>
+            </div>
+            <div class="field" id="bld-e-pitch-wrap"><label for="bld-e-pitch">Roof pitch <output class="mono" id="bld-e-pitch-out"></output></label><input id="bld-e-pitch" type="range" min="5" max="60" step="1"></div>
+            <div class="field" id="bld-e-ridge-wrap"><label for="bld-e-ridge" id="bld-e-ridge-lbl">Ridge runs</label><select id="bld-e-ridge"><option value="long">Along the long side</option><option value="short">Across (along the short side)</option></select></div>
+            <p class="capacity" id="bld-info"></p>
+            <button class="btn" id="bld-redraw">Redraw the floor area</button>
+            <p class="hint">Walls rise to the eaves (floors × floor height); the roof sits on top. Shading traces these exact walls and roof faces.</p>
+          </div>
           <div class="field"><label for="obj-heading">Rotation <output class="mono" id="obj-heading-out"></output></label><input id="obj-heading" type="range" min="0" max="359" step="1"></div>
           <div class="field" id="obj-por-wrap"><label for="obj-por">Transparency <output class="mono" id="obj-por-out"></output></label><input id="obj-por" type="range" min="0" max="0.9" step="0.05">
             <p class="hint">Share of direct sun that passes through the canopy. 0% is solid, as the thesis ray-casting treats it; raise it for sparse or leafless trees. The trunk always blocks.</p></div>
@@ -299,7 +311,7 @@
       <section data-pane="shading">
         <div class="field">
           <label class="toggle"><input type="checkbox" id="sh-tiles"><span>Include buildings, terrain and trees from the 3D tiles</span></label>
-          <p class="hint">Traces rays from each panel through the loaded 3D world to build its skyline. Your placed obstacles and other panels are always ray-cast per cell.</p>
+          <p class="hint">Traces rays from each panel through the loaded 3D world to build its skyline. Your placed objects and other panels are always ray-cast per cell.</p>
         </div>
         <div class="split">
           <div class="field"><label for="sh-step">Azimuth step</label>
@@ -316,20 +328,20 @@
         </div>
         <fieldset class="traces"><legend>Line traces to the sun</legend>
           <label class="toggle"><input type="checkbox" id="sh-traces"><span>Show the trace from every cell toward the sun (T)</span></label>
-          <div class="trace-key"><span class="k clear">clear</span><span class="k object">blocked by obstacle</span><span class="k partial">through a canopy</span><span class="k panel">another panel</span><span class="k tiles">3D tiles</span></div>
+          <div class="trace-key"><span class="k clear">clear</span><span class="k object">blocked by an object</span><span class="k partial">through a canopy</span><span class="k panel">another panel</span><span class="k tiles">3D tiles</span></div>
           <div class="field"><label>Trace against</label>
-            <label class="toggle"><input type="checkbox" id="sh-ch-objects" checked><span>Placed obstacles (trees, hedges, walls, chimneys, buildings, poles)</span></label>
+            <label class="toggle"><input type="checkbox" id="sh-ch-objects" checked><span>Placed objects (obstacles, foliage and buildings)</span></label>
             <label class="toggle"><input type="checkbox" id="sh-ch-panels" checked><span>Other panels (row-to-row shading)</span></label>
             <p class="hint">3D tiles: the switch at the top of this panel, after tracing the skyline.</p></div>
           <div class="field"><label>Rays per cell</label>
             <div class="seg small" id="sh-samples"><button data-v="1">1 (cell centre, as in the thesis)</button><button data-v="2">4 (2×2: partly shaded cells)</button></div></div>
           <div class="trace-now" id="sh-now"></div>
           <p class="hint" id="sh-trace-note"></p>
-          <p class="hint">Forecasts, the period run and the yearly yield trace every cell like this at each step. A cell keeps the share of direct sun its trace lets through: none past walls, buildings, poles and panels; the obstacle's transparency through a tree or hedge canopy (several canopies multiply); with 4 rays, the average over the cell. Diffuse light is not shaded.</p>
+          <p class="hint">Forecasts, the period run and the yearly yield trace every cell like this at each step. A cell keeps the share of direct sun its trace lets through: none past walls, buildings, poles and panels; the object's transparency through a tree or hedge canopy (several canopies multiply); with 4 rays, the average over the cell. Diffuse light is not shaded.</p>
         </fieldset>
         <figure class="sunpath">
           <canvas id="sunpath" width="520" height="520" aria-label="Sun path and skyline for the selected array"></canvas>
-          <figcaption><span class="key k-sun"></span>Sun path (selected day) <span class="key k-tile"></span>3D tiles <span class="key k-obj"></span>Obstacles</figcaption>
+          <figcaption><span class="key k-sun"></span>Sun path (selected day) <span class="key k-tile"></span>3D tiles <span class="key k-obj"></span>Objects</figcaption>
         </figure>
       </section>
 
@@ -356,7 +368,7 @@
           <label class="toggle"><input type="checkbox" id="ad-remember"><span>Remember the GitHub token on this device</span></label>
         </fieldset>
         <fieldset><legend>Publish</legend>
-          <label class="toggle"><input type="checkbox" id="ad-scene" checked><span>Site, arrays, obstacles and model settings</span></label>
+          <label class="toggle"><input type="checkbox" id="ad-scene" checked><span>Site, arrays, objects and model settings</span></label>
           <label class="toggle"><input type="checkbox" id="ad-keys" checked><span>3D world source and its key</span></label>
           <p class="hint warnline">Visitors’ browsers can read published keys. Restrict the Cesium token’s Allowed URLs and the Google key’s websites to this site’s address first.</p>
           <label class="toggle"><input type="checkbox" id="ad-om"><span>Open-Meteo commercial key</span></label>
@@ -400,7 +412,7 @@
           <button class="btn" id="scene-save">Save scene</button>
           <label class="btn" for="scene-open">Open scene</label><input id="scene-open" type="file" accept=".json,application/json" hidden>
         </div>
-        <p class="hint">A scene file holds the site, arrays, obstacles and model settings, not your keys.</p>
+        <p class="hint">A scene file holds the site, arrays, objects and model settings, not your keys.</p>
       </section>
     </div>
   </aside>
@@ -503,10 +515,12 @@
         <button data-tool="place" aria-pressed="true" title="Place (1)"><svg><use href="#i-cursor"/></svg>Place</button>
         <button data-tool="rect" title="Rectangle (2)"><svg><use href="#i-rect"/></svg>Rectangle</button>
         <button data-tool="free" title="Freehand (3)"><svg><use href="#i-free"/></svg>Freehand</button>
-        <button data-tool="obst" title="Obstruction (4)"><svg><use href="#i-bell"/></svg>Obstruction</button>
+        <button data-tool="obst" title="Object (4)"><svg><use href="#i-bell"/></svg>Object</button>
         <div class="pl-obwrap" id="pl-obwrap" hidden>
-          <select id="pl-obtype" aria-label="Obstruction type"></select>
+          <select id="pl-obtype" aria-label="Object type"></select>
           <label class="pl-oh">Height m<input id="pl-ob-h" type="number" min="0.2" max="60" step="0.5"></label>
+          <label class="pl-oh" id="pl-ob-fl-wrap" hidden>Floors<input id="pl-ob-fl" type="number" min="1" max="60" step="1" value="2"></label>
+          <label class="pl-oh" id="pl-ob-rf-wrap" hidden>Roof<select id="pl-ob-rf"></select></label>
           <label class="pl-oh" id="pl-ob-tr-wrap">Transparency %<input id="pl-ob-tr" type="number" min="0" max="90" step="5" value="0" title="Share of direct sun through the canopy; 0 = solid, as in the thesis"></label>
         </div>
       </div>
@@ -540,7 +554,7 @@
       <footer class="db-foot" id="db-foot"></footer></div>
   </section>
 
-  <div id="modebar" hidden><span id="modebar-text"></span> <kbd>Esc</kbd> to cancel</div>
+  <div id="modebar" hidden><span id="modebar-text"></span> <button id="modebar-done" type="button" hidden disabled>Finish</button> <kbd>Esc</kbd> to cancel</div>
   <div id="toasts" aria-live="polite"></div>
   <div id="boot">
     <script>if (/^https?:$/.test(location.protocol) && location.hash !== '#setup') document.getElementById('boot').classList.add('quiet');</script>

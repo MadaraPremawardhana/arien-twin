@@ -100,7 +100,8 @@
     Object.assign(state.site, s.site || {});
     state.arrays = (s.arrays || []).map(a => ({ ...defaultArray(0, 0, 0), panelModel: 'custom', landscape: false, ...a }));
     state.arrays.forEach(a => { if (a.panelModel !== 'custom' && !PN.matches(a)) a.panelModel = 'custom'; });
-    state.objects = (s.objects || []).filter(o => PH.OBJECT_TYPES[o.type]);
+    state.objects = (s.objects || []).filter(o => PH.OBJECT_TYPES[o.type] && (o.type !== 'house' || (Array.isArray(o.poly) && o.poly.length >= 3)));
+    state.objects.forEach(o => { if (o.type === 'house') PH.syncBuilding(o); });
     state.zones = Array.isArray(s.zones) ? s.zones.filter(z => z && Array.isArray(z.poly)) : [];
     state.designName = s.designName || '';
     state.finance = s.finance && typeof s.finance === 'object' ? s.finance : {};
@@ -176,6 +177,8 @@
       msaaSamples: 4, shouldAnimate: false, showRenderLoopErrors: false
     });
     scene = viewer.scene;
+    // a double click would otherwise fly to the corner markers while a building is being drawn
+    viewer.cesiumWidget.screenSpaceEventHandler.removeInputAction(Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
     scene.renderError.addEventListener((sc, err) => onRenderError(err));
     scene.globe.enableLighting = true;
     scene.globe.depthTestAgainstTerrain = true;
@@ -452,7 +455,7 @@
     });
   }
 
-  // ------------------------------------------------------------------ obstacles: real-size models with three levels of detail
+  // ------------------------------------------------------------------ objects: real-size models with three levels of detail
   function objMatrix(o, unitScale) {
     const t = Cesium.Matrix4.fromTranslation(new Cesium.Cartesian3(o.x, o.y, o.z));
     const r = Cesium.Matrix4.fromRotationTranslation(Cesium.Matrix3.fromRotationZ(-o.heading * D2R));
@@ -473,7 +476,7 @@
       case 'pole': cyl(1, 0.5, 0.5, 0.5, '#7a5c3e'); break;
       case 'hedge': box(1, 1, 1, 0.5, '#3d6630'); break;
       case 'chimney': box(1, 1, 1, 0.5, '#8a4b3a'); break;
-      case 'building': box(1, 1, 1, 0.5, '#c9c2b6'); break;
+      case 'building': case 'house': box(1, 1, 1, 0.5, '#c9c2b6'); break;
       default: box(1, 1, 1, 0.5, '#b9ad98');
     }
     return new Cesium.Primitive({ geometryInstances: I, appearance: new Cesium.PerInstanceColorAppearance({ closed: true }), modelMatrix: objMatrix(o, true), shadows: Cesium.ShadowMode.ENABLED });
@@ -483,7 +486,7 @@
     if (rec.models[lod] || rec.loading[lod] || rec.dead) return;
     rec.loading[lod] = true;
     try {
-      const url = await ArienModels.glbUrl(o.type, o.dims, lod);
+      const url = await ArienModels.glbUrl(o.type, o.dims, lod, o.type === 'house' ? o : undefined);
       if (rec.dead) return;
       const m = await Cesium.Model.fromGltfAsync({ url, modelMatrix: objMatrix(o), shadows: Cesium.ShadowMode.ENABLED, id: 'obj:' + o.id });
       if (rec.dead || !scene) return;
@@ -604,6 +607,7 @@
         }
         return;
       }
+      if (state.placing && state.placing.kind === 'outline' && state.placing.pts.length) outlineHover = surfacePoint(e.endPosition);
       const hit = !state.placing && pickItem(e.endPosition);
       scene.canvas.style.cursor = state.placing ? 'crosshair' : (hit ? (state.sel && hit.item.id === state.sel.id ? 'move' : 'pointer') : '');
     }, Cesium.ScreenSpaceEventType.MOUSE_MOVE);
@@ -629,25 +633,78 @@
     state.placing = p;
     $('#modebar').hidden = false;
     $('#modebar-text').textContent = p.kind === 'array' ? 'Click a roof or the ground to place the array'
-      : p.kind === 'measure' ? 'Click the first point to measure from' : `Click to place: ${PH.OBJECT_TYPES[p.type].label}`;
-    $$('#obj-lib button').forEach(b => b.setAttribute('aria-pressed', String(p.kind === 'object' && b.dataset.type === p.type)));
+      : p.kind === 'measure' ? 'Click the first point to measure from' : p.kind === 'outline' ? outlinePrompt() : `Click to place: ${PH.OBJECT_TYPES[p.type].label}`;
+    $('#modebar-done').hidden = p.kind !== 'outline'; $('#modebar-done').disabled = true;
+    $$('#obj-lib button[data-type]').forEach(b => b.setAttribute('aria-pressed', String((p.kind === 'object' && b.dataset.type === p.type) || (p.kind === 'outline' && !p.redraw && b.dataset.type === 'house'))));
     if (scene) scene.canvas.style.cursor = 'crosshair';
   }
   function stopPlacing() {
-    state.placing = null; $('#modebar').hidden = true;
-    $$('#obj-lib button').forEach(b => b.setAttribute('aria-pressed', 'false'));
+    if (state.placing && state.placing.kind === 'outline') clearOutline();
+    state.placing = null; $('#modebar').hidden = true; $('#modebar-done').hidden = true;
+    $$('#obj-lib button[data-type]').forEach(b => b.setAttribute('aria-pressed', 'false'));
     if (scene) scene.canvas.style.cursor = '';
   }
   function placeAt(pos) {
     const p = surfacePoint(pos);
     if (!p) { toast('Click on the ground or a roof.', 'warn'); return; }
     if (state.placing.kind === 'measure') { measureClick(p); return; }
+    if (state.placing.kind === 'outline') { outlineClick(p, pos); return; }
     const pl = state.placing; stopPlacing();
     if (pl.kind === 'array') {
       const a = defaultArray(p[0], p[1], p[2]); state.arrays.push(a); buildArrayPrimitive(a); select('array', a.id, true);
     } else {
       const o = defaultObject(pl.type, p[0], p[1], p[2]); state.objects.push(o); buildObjectModel(o); select('object', o.id, true);
     }
+    state.shade.dirty = true; state.run = null; refreshLists(); saveSoon(); simulateNow(true); drawSunPath(); designChanged();
+  }
+
+  // drawing a building's floor area: click each corner on the ground, then Finish (or Enter, or click the first corner)
+  const newBld = { floors: PH.BUILDING_DEFAULTS.floors, roof: PH.BUILDING_DEFAULTS.roof };
+  let outlineEnts = [], outlineHover = null;
+  function outlinePrompt() {
+    const n = state.placing ? state.placing.pts.length : 0;
+    return n === 0 ? 'Click the first corner of the floor area' : n < 3 ? `Click the next corner (${n} so far)`
+      : `${n} corners · click the first corner or Finish to close · Backspace removes the last`;
+  }
+  function clearOutline() { if (viewer) outlineEnts.forEach(e => viewer.entities.remove(e)); outlineEnts = []; outlineHover = null; }
+  function drawOutline() {
+    if (!viewer) return;
+    clearOutline();
+    const pl = state.placing, col = Cesium.Color.fromCssColorString('#f3b23c'), z = (p) => enu2ecef(p[0], p[1], p[2] + 0.08);
+    outlineEnts.push(viewer.entities.add({ polyline: { positions: new Cesium.CallbackProperty(() => {
+      const pts = state.placing && state.placing.pts || []; if (!pts.length) return [];
+      const ring = pts.map(z); if (outlineHover) ring.push(z(outlineHover)); if (pts.length >= 2) ring.push(z(pts[0]));
+      return ring;
+    }, false), width: 3, material: col, depthFailMaterial: col.withAlpha(0.45) } }));
+    pl.pts.forEach((p, i) => outlineEnts.push(viewer.entities.add({ position: z(p), point: { pixelSize: i === 0 ? 12 : 9, color: col, outlineColor: Cesium.Color.BLACK, outlineWidth: 1, disableDepthTestDistance: Number.POSITIVE_INFINITY } })));
+  }
+  function screenOf(p) {
+    const ST = Cesium.SceneTransforms, f = ST.worldToWindowCoordinates || ST.wgs84ToWindowCoordinates;
+    try { return f(scene, enu2ecef(...p)); } catch (e) { return null; }
+  }
+  function outlineClick(p, pos) {
+    const pl = state.placing;
+    if (pl.pts.length >= 3) { const f = screenOf(pl.pts[0]); if (f && Math.hypot(f.x - pos.x, f.y - pos.y) < 14) { finishOutline(); return; } }
+    pl.pts.push(p); drawOutline();
+    $('#modebar-text').textContent = outlinePrompt(); $('#modebar-done').disabled = pl.pts.length < 3;
+  }
+  function outlineUndo() {
+    const pl = state.placing; if (!pl || pl.kind !== 'outline' || !pl.pts.length) return;
+    pl.pts.pop(); drawOutline(); $('#modebar-text').textContent = outlinePrompt(); $('#modebar-done').disabled = pl.pts.length < 3;
+  }
+  function finishOutline() {
+    const pl = state.placing; if (!pl || pl.kind !== 'outline') return;
+    const old = pl.redraw && state.objects.find(o => o.id === pl.redraw);
+    const settings = old ? { floors: old.floors, floorHeight: old.floorHeight, roof: old.roof, pitch: old.pitch, ridge: old.ridge } : { floors: newBld.floors, roof: newBld.roof };
+    const b = PH.buildingFromOutline(pl.pts.map(q => [q[0], q[1]]), settings);
+    if (b.error) { toast(b.error, 'warn', 5000); return; }
+    const base = Math.min(...pl.pts.map(q => q[2]));
+    stopPlacing();
+    let o;
+    if (old) { Object.assign(old, b, { z: base }); o = old; buildObjectModel(o); }
+    else { o = { id: newId('o'), type: 'house', z: base, porosity: 0, worldSrc: state.world.src, ...b }; state.objects.push(o); buildObjectModel(o); }
+    select('object', o.id, true);
+    toast(`${PH.objectLabel(o)}: ${Math.abs(PH.polyArea(o.poly)).toFixed(0)} m² floor area, ${o.dims.height.toFixed(1)} m high.`, 'ok');
     state.shade.dirty = true; state.run = null; refreshLists(); saveSoon(); simulateNow(true); drawSunPath(); designChanged();
   }
   // measuring: two clicks on the 3D world, results in metres
@@ -669,7 +726,7 @@
     $('#obj-measure-out').textContent = text;
     stopPlacing();
   }
-  /** Set an obstacle's height to the top of the 3D-tile surface inside its footprint (real tree or building) */
+  /** Set an object's height to the top of the 3D-tile surface inside its footprint (real tree or building) */
   async function fitHeightToTiles(o) {
     if (state.world.src === 'none') { toast('Load Cesium ion or Google 3D tiles first (World panel).', 'warn'); return; }
     const ex = excludeList(), L = o.dims.length, Wd = o.dims.width ?? L, th = -o.heading * D2R, c = Math.cos(th), sn = Math.sin(th);
@@ -680,6 +737,12 @@
       if (r && r.position) { const z = ecef2enu(r.position)[2]; hits++; if (z > top) top = z; }
     }
     if (!hits || top - o.z < 0.3) { toast('No taller 3D-tile surface over this object. Drag it onto the real tree or building, then try again.', 'warn', 6000); return; }
+    if (o.type === 'house') { // whole floors under the roof the building already has
+      const sh = PH.buildingShape(o), rise = sh.top - sh.eaves;
+      o.floors = Math.max(1, Math.round((top - o.z - rise) / o.floorHeight)); PH.syncBuilding(o);
+      rebuildObjectSoon(o); afterObjectEdit(o); fillEditors();
+      toast(`Set to ${o.floors} floor${o.floors === 1 ? '' : 's'} (${o.dims.height.toFixed(1)} m) from the 3D tiles.`, 'ok'); return;
+    }
     o.dims.height = +(top - o.z).toFixed(2);
     rebuildObjectSoon(o); afterObjectEdit(o); fillEditors();
     toast(`Height set to ${o.dims.height} m from the 3D tiles.`, 'ok');
@@ -694,7 +757,7 @@
     const it = selItem(); if (!it) return;
     if (state.sel.kind === 'array') { const r = arrayPrims.get(it.id); if (r) { scene.primitives.remove(r.prim); if (r.low) scene.primitives.remove(r.low); } arrayPrims.delete(it.id); geoms.delete(it.id); state.arrays = state.arrays.filter(a => a !== it); delete state.shade.profiles[it.id]; }
     else { removeObjectModel(it.id); state.objects = state.objects.filter(o => o !== it); clearProfiles(); }
-    toast(`Removed ${state.sel.kind === 'array' ? it.name : PH.OBJECT_TYPES[it.type].label}.`);
+    toast(`Removed ${state.sel.kind === 'array' ? it.name : PH.objectLabel(it)}.`);
     select(null); state.shade.dirty = true; saveSoon(); simulateNow(true); state.run = null; designChanged();
   }
   function duplicateSelected() {
@@ -708,7 +771,7 @@
     const it = selItem(); if (!it) return;
     it.x += dx; it.y += dy; it.z += dz;
     if (dh) { if (state.sel.kind === 'array') it.azimuth = ((it.azimuth + dh) % 360 + 360) % 360; else it.heading = ((it.heading + dh) % 360 + 360) % 360; }
-    if (ds && state.sel.kind === 'object') { it.dims.length *= ds; if (it.dims.width != null) it.dims.width *= ds; it.dims.height *= ds; }
+    if (ds && state.sel.kind === 'object') { if (it.type === 'house') PH.scaleBuilding(it, it.dims.length * ds, it.dims.width * ds); else { it.dims.length *= ds; if (it.dims.width != null) it.dims.width *= ds; it.dims.height *= ds; } }
     if (state.sel.kind === 'array') buildArrayPrimitive(it); else if (ds) rebuildObjectSoon(it); else updateObjectMatrix(it);
     state.shade.dirty = true; clearProfiles(it); state.run = null; fillEditors(); saveSoon(); simulateNow(true); drawSunPath(); designChanged();
   }
@@ -717,6 +780,10 @@
     if (!viewer || !$('#boot').classList.contains('gone') || state.view !== 'twin') return;
     const k = e.key;
     if (k === 't' || k === 'T') { setTraces(!state.shade.showTraces); return; }
+    if (state.placing && state.placing.kind === 'outline') {
+      if (k === 'Enter') { e.preventDefault(); finishOutline(); return; }
+      if (k === 'Backspace' || k === 'Delete' || ((k === 'z' || k === 'Z') && (e.ctrlKey || e.metaKey))) { e.preventDefault(); outlineUndo(); return; }
+    }
     if (k === 'Escape') { if (state.placing) stopPlacing(); else if (!$('#drawer').hidden) closeDrawer(); else select(null); return; }
     if (k === ' ') { e.preventDefault(); togglePlay(); return; }
     if (k === 'd' || k === 'D') { toggleDash(); return; }
@@ -850,12 +917,12 @@
   }
   /** Line-trace settings shared by the live view, forecasts and the yield */
   const traceOpts = () => ({ samples: state.shade.samples, channels: { panels: state.shade.channels.panels !== false, objects: state.shade.channels.objects !== false, tiles: true } });
-  /** Stable key for what blocked a cell: an obstacle id, other panels, or the 3D tiles */
+  /** Stable key for what blocked a cell: an object id, other panels, or the 3D tiles */
   const hitterKey = (code, objects = state.objects) => code >= 0 ? 'o:' + (objects[code] ? objects[code].id : code) : code === PH.HIT.PANEL ? 'panel' : 'tiles';
   function hitterLabel(key) {
     if (key === 'panel') return 'Other panels (row-to-row)';
     if (key === 'tiles') return 'Buildings, terrain and trees in the 3D tiles';
-    const o = state.objects.find(x => 'o:' + x.id === key); if (!o) return 'Removed obstacle';
+    const o = state.objects.find(x => 'o:' + x.id === key); if (!o) return 'Removed object';
     const T = PH.OBJECT_TYPES[o.type];
     // where it stands relative to the middle of the panels
     const cs = state.arrays.flatMap(a => (geoms.get(a.id) || geomFor(a)).panels.map(p => p.c));
@@ -863,7 +930,7 @@
     if (cs.length) { const cx = cs.reduce((t, c) => t + c[0], 0) / cs.length, cy = cs.reduce((t, c) => t + c[1], 0) / cs.length;
       const dx = o.x - cx, dy = o.y - cy, d = Math.hypot(dx, dy); if (d > 1) where = `, ${Math.round(d)} m ${PL.facingWord(Math.atan2(dx, dy) * R2D)}`; }
     const tr = T.porous && o.porosity > 0 ? `, ${Math.round(o.porosity * 100)}% transparent` : '';
-    return `${T.label} ${o.dims.height.toFixed(1)} m${where}${tr}`;
+    return `${o.type === 'house' ? 'Building' : T.label} ${o.dims.height.toFixed(1)} m${where}${tr}`;
   }
   /** Sum per-step losses (kW, at stepH hours) per cause over the chosen steps → [{key, label, kwh}] largest first */
   function lossesByCause(lostBy, idx, stepH) {
@@ -1460,7 +1527,7 @@ void main() {
   }
 
   // ------------------------------------------------------------------ UI: drawers and panes
-  const PANE_TITLES = { site: 'Site', time: 'Weather period', panels: 'Solar arrays', objects: 'Obstacles', models: 'Irradiance models', shading: 'Shading', meta: 'Meta-learning', world: '3D world', admin: 'Site settings' };
+  const PANE_TITLES = { site: 'Site', time: 'Weather period', panels: 'Solar arrays', objects: 'Objects', models: 'Irradiance models', shading: 'Shading', meta: 'Meta-learning', world: '3D world', admin: 'Site settings' };
   function openDrawer(name) {
     $('#drawer').hidden = false;
     $('#drawer-title').textContent = PANE_TITLES[name];
@@ -1487,7 +1554,7 @@ void main() {
       const kwp = PN.arrayKwp(a);
       return `<li data-id="${a.id}" aria-selected="${state.sel && state.sel.id === a.id}"><span class="dot"></span>${escapeHtml(a.name)}<span class="meta">${a.rows * a.cols} × · ${kwp.toFixed(2)} kWp</span></li>`;
     }).join('') || '<li class="hint" style="cursor:default">No arrays yet.</li>';
-    $('#obj-list').innerHTML = state.objects.map(o => `<li data-id="${o.id}" aria-selected="${state.sel && state.sel.id === o.id}"><span class="dot obj"></span>${PH.OBJECT_TYPES[o.type].label}<span class="meta">${o.dims.height.toFixed(1)} m</span></li>`).join('');
+    $('#obj-list').innerHTML = state.objects.map(o => `<li data-id="${o.id}" aria-selected="${state.sel && state.sel.id === o.id}"><span class="dot obj"></span>${escapeHtml(PH.objectLabel(o))}<span class="meta">${o.dims.height.toFixed(1)} m</span></li>`).join('');
   }
   const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
@@ -1521,6 +1588,16 @@ void main() {
         `<div class="field"><label for="obj-d-${k}">${l} (m)</label><input id="obj-d-${k}" data-dim="${k}" type="number" min="0.05" step="0.1" value="${(o.dims[k] ?? o.dims.length).toFixed(2)}"></div>`).join('');
       $('#obj-heading').value = o.heading; $('#obj-heading-out').textContent = o.heading + '°';
       $('#obj-por-wrap').hidden = !T.porous; $('#obj-por').value = o.porosity || 0; $('#obj-por-out').textContent = Math.round((o.porosity || 0) * 100) + '%';
+      const isB = o.type === 'house'; $('#obj-bld').hidden = !isB;
+      $('#obj-fit').textContent = isB ? 'Match floors to the 3D tiles' : 'Match height to the 3D tiles';
+      if (isB) {
+        const sh = PH.buildingShape(o), set = (id, v) => { const el = $(id); if (document.activeElement !== el) el.value = v; };
+        set('#bld-e-floors', o.floors); set('#bld-e-fh', o.floorHeight); $('#bld-e-roof').value = o.roof; set('#bld-e-pitch', o.pitch); $('#bld-e-ridge').value = o.ridge;
+        $('#bld-e-pitch-out').textContent = o.pitch + '°';
+        $('#bld-e-pitch-wrap').hidden = o.roof === 'flat'; $('#bld-e-ridge-wrap').hidden = o.roof === 'flat';
+        $('#bld-e-ridge-lbl').textContent = o.roof === 'shed' ? 'Slope runs' : 'Ridge runs';
+        $('#bld-info').innerHTML = `${o.poly.length} corners · <b>${Math.abs(PH.polyArea(o.poly)).toFixed(0)} m²</b> per floor · eaves ${sh.eaves.toFixed(1)} m · top ${sh.top.toFixed(1)} m`;
+      }
       $('#obj-x').value = o.x.toFixed(2); $('#obj-y').value = o.y.toFixed(2); $('#obj-z').value = o.z.toFixed(2);
     }
   }
@@ -1575,9 +1652,25 @@ void main() {
     $('#obj-dims').addEventListener('change', (e) => {
       const o = selItem(); if (!o || state.sel.kind !== 'object') return;
       const k = e.target.dataset.dim; const v = Math.max(0.05, Number(e.target.value)); if (!isFinite(v)) return;
+      if (o.type === 'house') { PH.scaleBuilding(o, k === 'length' ? v : o.dims.length, k === 'width' ? v : o.dims.width); rebuildObjectSoon(o); afterObjectEdit(o); fillEditors(); return; }
       o.dims[k] = v; if (k === 'length' && !PH.OBJECT_TYPES[o.type].dimLabels[1]) o.dims.width = v;
       rebuildObjectSoon(o); afterObjectEdit(o);
     });
+    // drawn buildings: floors, floor height, roof
+    const bld = (id, ev, apply) => $(id).addEventListener(ev, (e) => {
+      const o = selItem(); if (!o || o.type !== 'house') return;
+      if (apply(o, e.target.value) === false) return;
+      PH.syncBuilding(o);
+      if (ev === 'input') $('#bld-e-pitch-out').textContent = o.pitch + '°';
+      rebuildObjectSoon(o); afterObjectEdit(o, ev === 'input'); if (ev !== 'input') fillEditors();
+    });
+    bld('#bld-e-floors', 'change', (o, v) => { v = Math.round(Number(v)); if (!isFinite(v)) return false; o.floors = v; });
+    bld('#bld-e-fh', 'change', (o, v) => { v = Number(v); if (!isFinite(v)) return false; o.floorHeight = v; });
+    bld('#bld-e-roof', 'change', (o, v) => { o.roof = v; o.pitch = PH.ROOF_PITCH[v]; });
+    bld('#bld-e-pitch', 'input', (o, v) => { o.pitch = Number(v); });
+    bld('#bld-e-ridge', 'change', (o, v) => { o.ridge = v; });
+    $('#bld-redraw').addEventListener('click', () => { const o = selItem(); if (o && o.type === 'house') startPlacing({ kind: 'outline', pts: [], redraw: o.id }); });
+    $('#bld-e-roof').innerHTML = Object.entries(PH.ROOF_TYPES).map(([k, l]) => `<option value="${k}">${l}</option>`).join('');
     $('#obj-heading').addEventListener('input', (e) => { const o = selItem(); if (!o) return; o.heading = Number(e.target.value); $('#obj-heading-out').textContent = o.heading + '°'; updateObjectMatrix(o); afterObjectEdit(o, true); });
     $('#obj-por').addEventListener('input', (e) => { const o = selItem(); if (!o) return; o.porosity = Number(e.target.value); $('#obj-por-out').textContent = Math.round(o.porosity * 100) + '%'; afterObjectEdit(o, true); });
     ['x', 'y', 'z'].forEach(k => $('#obj-' + k).addEventListener('change', (e) => { const o = selItem(); if (!o) return; const v = Number(e.target.value); if (!isFinite(v)) return; o[k] = v; updateObjectMatrix(o); afterObjectEdit(o); }));
@@ -1596,15 +1689,28 @@ void main() {
     wall: '<path d="M3 9h18v10H3z"/><path d="M3 14h18M9 9v5M15 9v5M6 14v5M12 14v5M18 14v5"/>',
     chimney: '<path d="M4 21V12l8-6 8 6v9z"/><path d="M15 8V4h3v6.2"/>',
     building: '<path d="M4 21V6h10v15M14 10h6v11"/><path d="M7 9h2M7 13h2M7 17h2M17 14h1M17 18h1"/>',
+    house: '<path d="M3 11l9-7 9 7"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-5h4v5"/><path d="M3 21h18" stroke-dasharray="2 2"/>',
     pole: '<path d="M12 3v18M7 6h10M8 9h8"/>'
   };
   function buildLibrary() {
-    $('#obj-lib').innerHTML = Object.entries(PH.OBJECT_TYPES).map(([k, t]) => `<button data-type="${k}" aria-pressed="false"><svg viewBox="0 0 24 24">${OBJ_ICONS[k]}</svg>${t.label}</button>`).join('');
+    const btn = (k, t) => `<button data-type="${k}" aria-pressed="false"><svg viewBox="0 0 24 24">${OBJ_ICONS[k]}</svg>${k === 'house' ? 'Draw a building' : t.label}</button>`;
+    const roofOpts = Object.entries(PH.ROOF_TYPES).map(([k, l]) => `<option value="${k}"${k === newBld.roof ? ' selected' : ''}>${l}</option>`).join('');
+    $('#obj-lib').innerHTML = PH.CATEGORIES.map(c => {
+      const types = Object.entries(PH.OBJECT_TYPES).filter(([, t]) => t.category === c.key).sort(([a], [b]) => (b === 'house') - (a === 'house'));
+      return `<div class="lib-group" data-cat="${c.key}"><h4>${c.label}</h4><div class="lib">${types.map(([k, t]) => btn(k, t)).join('')}</div>`
+        + (c.key === 'building' ? `<div class="bld-new"><label>Floors<input id="bld-floors" type="number" min="1" max="60" step="1" value="${newBld.floors}"></label>`
+          + `<label>Roof<select id="bld-roof">${roofOpts}</select></label></div><p class="hint">Draw a building: click each corner of its floor area on the ground, then Finish (Enter). Floors are ${PH.BUILDING_DEFAULTS.floorHeight} m each; change them, the roof and its pitch after.</p>` : '')
+        + '</div>';
+    }).join('');
     $('#obj-lib').addEventListener('click', (e) => {
-      const b = e.target.closest('button'); if (!b) return;
+      const b = e.target.closest('button[data-type]'); if (!b) return;
+      if (b.dataset.type === 'house') { if (state.placing && state.placing.kind === 'outline' && !state.placing.redraw) stopPlacing(); else startPlacing({ kind: 'outline', pts: [] }); return; }
       if (state.placing && state.placing.type === b.dataset.type) { stopPlacing(); return; }
       startPlacing({ kind: 'object', type: b.dataset.type });
     });
+    $('#bld-floors').addEventListener('change', (e) => { newBld.floors = Math.round(clamp(Number(e.target.value) || 1, 1, 60)); e.target.value = newBld.floors; });
+    $('#bld-roof').addEventListener('change', (e) => { newBld.roof = e.target.value; });
+    $('#modebar-done').addEventListener('click', finishOutline);
   }
 
   function buildModelPane() {
@@ -1640,7 +1746,7 @@ void main() {
     const moved = Math.abs(lat - state.site.lat) > 1e-6 || Math.abs(lon - state.site.lon) > 1e-6;
     state.site.lat = lat; state.site.lon = lon; state.site.name = name || `${lat.toFixed(4)}, ${lon.toFixed(4)}`;
     if (moved) {
-      if (state.arrays.length || state.objects.length) toast('Moved site: cleared the previous arrays and obstacles.', 'info');
+      if (state.arrays.length || state.objects.length) toast('Moved site: cleared the previous arrays and objects.', 'info');
       state.arrays = []; state.objects = []; state.zones = []; state.sel = null; state.shade.profiles = {}; state.shade.useTiles = false; $('#sh-tiles').checked = false;
       geoms.clear(); state.forecastRes = null; state.yieldRes = null; state.yearWx = null; state.designName = ''; state.designAuto = false;
     }
@@ -2078,7 +2184,7 @@ void main() {
       html += `<div class="result-card${f.stale ? ' stale' : ''}"><div class="rc-head"><span class="eyebrow">Forecast · next 7 days</span>${f.stale ? '<span class="badge warn">design changed</span>' : ''}</div>
         <div class="rc-big"><b>${(f.total * acFactor(false)).toFixed(1)}</b> kWh <small>${(f.total * acFactor(false) / Math.max(1, f.days.length)).toFixed(1)} kWh a day · ${f.kwp.toFixed(2)} kWp · after ${finAssume().systemLosses}% system losses</small></div>
         <div class="rc-chart"><canvas data-chart="forecast" aria-label="kWh per day, next 7 days"></canvas></div>
-        ${f.shading && f.shading.lostKWh > 0.05 ? `<p class="hint shade-line">Shading takes <b>${(f.shading.lostKWh * acFactor(false)).toFixed(1)} kWh</b> (${(f.shading.pct * 100).toFixed(1)}%) this week${f.shading.by[0] ? `, most of it ${escapeHtml(f.shading.by[0].label)}` : ''}.</p>` : (state.objects.length ? '<p class="hint shade-line">No shading from the obstacles this week.</p>' : '')}
+        ${f.shading && f.shading.lostKWh > 0.05 ? `<p class="hint shade-line">Shading takes <b>${(f.shading.lostKWh * acFactor(false)).toFixed(1)} kWh</b> (${(f.shading.pct * 100).toFixed(1)}%) this week${f.shading.by[0] ? `, most of it ${escapeHtml(f.shading.by[0].label)}` : ''}.</p>` : (state.objects.length ? '<p class="hint shade-line">No shading from the objects this week.</p>' : '')}
         <p class="hint">${escapeHtml(modelLabel(f.model))} · ${escapeHtml(f.source)}${f.cached ? ' (site cache)' : ''}. Every cell traced toward the sun every 15 minutes.</p></div>`;
     }
     if (y) {
@@ -2086,7 +2192,7 @@ void main() {
       html += `<div class="result-card${y.stale ? ' stale' : ''}"><div class="rc-head"><span class="eyebrow">Estimated yield · a year</span>${y.stale ? '<span class="badge warn">design changed</span>' : ''}</div>
         <div class="rc-big"><b>${Math.round(y.total * acFactor()).toLocaleString()}</b> kWh <small>${Math.round(y.specific * acFactor()).toLocaleString()} kWh/kWp · shading loss ${(y.shadingLoss * 100).toFixed(1)}% · first year, after ${finAssume().systemLosses}% system losses</small></div>
         <div class="rc-chart"><canvas data-chart="yield" aria-label="kWh per month"></canvas></div>
-        <p class="hint">${escapeHtml(modelLabel(y.model))} on ${escapeHtml(y.source)}, ${fmtDay(y.start)} ${new Date(y.start).getUTCFullYear()} – ${fmtDay(y.end)} ${new Date(y.end).getUTCFullYear()}${y.cached ? ' (site cache)' : ''}, hourly.${per ? ' Other models: ' + escapeHtml(per) + ' kWh.' : ''}${y.shadingBy && y.shadingBy[0] ? ` Largest shading: ${escapeHtml(y.shadingBy[0].label)}, ${Math.round(y.shadingBy[0].kwh * acFactor()).toLocaleString()} kWh a year.` : ''}${y.tiles ? ' Includes the 3D-tile skyline.' : ' Shading from placed obstacles and panel rows; trace the skyline in the 3D twin to add buildings from the tiles.'} Losses and prices are set in Dashboard → Assumptions.</p></div>`;
+        <p class="hint">${escapeHtml(modelLabel(y.model))} on ${escapeHtml(y.source)}, ${fmtDay(y.start)} ${new Date(y.start).getUTCFullYear()} – ${fmtDay(y.end)} ${new Date(y.end).getUTCFullYear()}${y.cached ? ' (site cache)' : ''}, hourly.${per ? ' Other models: ' + escapeHtml(per) + ' kWh.' : ''}${y.shadingBy && y.shadingBy[0] ? ` Largest shading: ${escapeHtml(y.shadingBy[0].label)}, ${Math.round(y.shadingBy[0].kwh * acFactor()).toLocaleString()} kWh a year.` : ''}${y.tiles ? ' Includes the 3D-tile skyline.' : ' Shading from placed objects and panel rows; trace the skyline in the 3D twin to add buildings from the tiles.'} Losses and prices are set in Dashboard → Assumptions.</p></div>`;
     }
     return html;
   }
@@ -2227,6 +2333,12 @@ void main() {
         if (state.sel && state.sel.id === id) state.sel = null;
       },
       newObject(type, x, y) { const o = defaultObject(type, x, y, 0); o.fromPlanner = true; o.worldSrc = 'none'; state.objects.push(o); if (scene) buildObjectModel(o); return o; },
+      /** A building from a floor area drawn on the map (ENU corners); {error} when the outline is unusable */
+      newBuilding(pts, opts) {
+        const b = PH.buildingFromOutline(pts, opts); if (b.error) return b;
+        const o = { id: newId('o'), type: 'house', z: 0, porosity: 0, fromPlanner: true, worldSrc: 'none', ...b };
+        state.objects.push(o); if (scene) buildObjectModel(o); return o;
+      },
       updateObject(o, rebuild) { if (!scene) return; if (rebuild) rebuildObjectSoon(o); else updateObjectMatrix(o); },
       removeObject(id) { if (scene) removeObjectModel(id); state.objects = state.objects.filter(o => o.id !== id); if (state.sel && state.sel.id === id) state.sel = null; },
       changed() { state.shade.dirty = true; state.run = null; geoms.clear(); refreshLists(); fillEditors(); saveSoon(); if (viewer && state.wx.series) simulateNow(true); designChanged(); },
@@ -2472,7 +2584,7 @@ void main() {
   }
   function finishSetup(withWeather) {
     const b = $('#boot'); b.classList.add('gone'); setTimeout(() => { b.hidden = true; }, 450);
-    if (!window.THREE) toast('three.js did not load, so obstacles use simple shapes.', 'warn');
+    if (!window.THREE) toast('three.js did not load, so objects use simple shapes.', 'warn');
     if (!withWeather) toast('Load weather any time from the Weather panel.', 'info', 6000);
     if (state.firstRun) { state.firstRun = false; toast('Demo scene: a 12-panel array with a tree and a low wall. Click an item to edit it.', 'info', 7000); }
   }
@@ -2614,7 +2726,7 @@ void main() {
   function renderAdminCurrent(c) {
     if (!c) { $('#ad-current').textContent = 'No settings have been published for this site yet.'; return; }
     const parts = [`${c.site ? c.site.name : 'site'}`, c.world ? worldLabelFor(c.world.src) : '', c.world && (c.world.ionToken || c.world.googleKey) ? 'key included' : 'no key',
-      c.scene ? `${(c.scene.arrays || []).length} array(s), ${(c.scene.objects || []).length} obstacle(s)` : '', c.autoConnect ? 'connects automatically' : 'visitors connect themselves'];
+      c.scene ? `${(c.scene.arrays || []).length} array(s), ${(c.scene.objects || []).length} object(s)` : '', c.autoConnect ? 'connects automatically' : 'visitors connect themselves'];
     $('#ad-current').textContent = `Published settings: ${parts.filter(Boolean).join(' · ')}${c.updated ? ` · ${new Date(c.updated).toLocaleString()}` : ''}.`;
   }
   const worldLabelFor = (src) => ({ none: 'Map only', ion: 'Cesium ion terrain + OSM Buildings', google: 'Google Photorealistic 3D Tiles', 'google-ion': 'Google Photorealistic (via ion)' })[src] || '';

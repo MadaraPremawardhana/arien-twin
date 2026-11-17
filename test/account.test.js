@@ -27,6 +27,17 @@ near(bw.dims.length, 5, 0.01, 'wall length'); near(bw.dims.width, 0.3, 0.01, 'wa
 near(((bw.heading - 30) % 180 + 180) % 180, 0, 0.05, 'wall heading round trip');
 near(bt.x, 9, 0.01, 'tree x'); near(bt.y, -11, 0.01, 'tree y'); near(bt.dims.length, 6, 0.05, 'tree canopy diameter'); near(bt.porosity, 0.4, 1e-9, 'tree transparency round trip');
 ok(AC.obstructionToObject({ polygon: [{ lat: 1, lng: 1 }, { lat: 1, lng: 1.0001 }], height_m: 3 }, site) === null, 'two-point polygon refused');
+{ // a drawn building keeps its floor plan, floors and roof through the account record
+  const PHY = require('../src/physics.js');
+  const hb = { type: 'house', z: 0, porosity: 0, ...PHY.buildingFromOutline([[20, 0], [30, 0], [30, 6], [24, 6], [24, 12], [20, 12]], { floors: 3, roof: 'hip' }) };
+  const hr = AC.objectToObstruction(hb, site);
+  ok(hr.polygon.length === 6 && /Building \(3 floors, hip roof 30°\)/.test(hr.label) && Math.abs(hr.height_m - hb.dims.height) < 0.01, 'building → obstruction: ' + hr.label + ' ' + hr.height_m);
+  const back = AC.obstructionToObject(JSON.parse(JSON.stringify(hr)), site);
+  ok(back && back.type === 'house' && back.floors === 3 && back.roof === 'hip' && back.poly.length === 6, 'obstruction → building: ' + JSON.stringify(back && [back.type, back.floors, back.roof]));
+  ok(back && Math.abs(back.dims.height - hb.dims.height) < 0.05 && Math.abs(PHY.polyArea(back.poly) - PHY.polyArea(hb.poly)) < 0.5, 'round trip keeps height and floor area');
+  const plain = AC.obstructionToObject({ polygon: hr.polygon, height_m: 7, label: 'Building' }, site);
+  ok(plain && plain.type === 'building', 'a plain "Building" from the web designer stays a block');
+}
 ok(AC.obstructionToObject({ polygon: ow.polygon, height_m: 0 }, site) === null, 'zero height refused');
 ok(AC.typeFromLabel('Big oak tree') === 'tree' && AC.typeFromLabel('Leylandii hedge') === 'conifer' && AC.typeFromLabel('Garden fence') === 'wall' && AC.typeFromLabel('Obstruction') === 'building', 'labels map to obstacle types');
 

@@ -154,7 +154,15 @@ details[open] summary { margin-bottom: 8px; }
 #arr-editor, #obj-editor { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; border-top: 1px solid var(--line); }
 #arr-editor[hidden], #obj-editor[hidden] { display: none; }
 
-/* obstacle library */
+/* object library: groups (obstacles, foliage, buildings) */
+#obj-lib { display: flex; flex-direction: column; gap: 10px; }
+.lib-group h4 { margin: 0 0 6px; font: 600 11px var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.bld-new { display: flex; gap: 8px; margin-top: 8px; }
+.bld-new label { display: flex; flex-direction: column; gap: 3px; flex: 1; font-size: 11.5px; color: var(--muted); }
+.bld-new input, .bld-new select { width: 100%; }
+.lib-group .hint { margin: 6px 0 0; }
+#obj-bld { display: flex; flex-direction: column; gap: 12px; }
+#obj-bld[hidden] { display: none; }
 .lib { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
 .lib button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px 8px; border-radius: var(--r); border: 1px solid var(--line); background: rgba(6, 12, 16, 0.4); cursor: pointer; font-size: 12px; color: var(--fg); }
 .lib button:hover { border-color: var(--good); }
@@ -239,6 +247,9 @@ table.results td.best { color: var(--good); }
 
 /* ---------- Misc ---------- */
 #modebar { position: absolute; z-index: 25; top: max(14px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); background: var(--sun); color: var(--sun-ink); padding: 7px 14px; border-radius: 999px; font-weight: 600; font-size: 13px; box-shadow: var(--shadow); }
+#modebar button { font: 600 12px var(--f-body); border: 0; border-radius: 999px; padding: 3px 10px; margin: 0 4px; background: var(--sun-ink); color: var(--sun); cursor: pointer; }
+#modebar button[disabled] { opacity: 0.45; cursor: default; }
+#modebar button[hidden] { display: none; }
 #modebar kbd { font: 600 11px var(--f-mono); background: rgba(0, 0, 0, 0.15); padding: 1px 5px; border-radius: 4px; }
 #toasts { position: absolute; z-index: 40; bottom: calc(var(--timebar) + 16px); left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; pointer-events: none; width: min(560px, calc(100vw - 32px)); }
 .toast { background: var(--solid); border: 1px solid var(--line-strong); border-left: 3px solid var(--sky); border-radius: 8px; padding: 9px 14px; font-size: 13px; box-shadow: var(--shadow); pointer-events: auto; animation: tin 0.2s ease-out; }
@@ -358,11 +369,11 @@ body.view-flat #toasts { bottom: 24px; }
 .pl-oh[hidden] { display: none; }
 .pl-obj-ed { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 6px; }
 .pl-obj-ed label { display: flex; flex-direction: column; gap: 3px; font-size: 10px; }
-.pl-obj-ed input { padding: 4px 6px; font-size: 12px; }
+.pl-obj-ed input, .pl-obj-ed select { padding: 4px 6px; font-size: 12px; }
+.pl-obj-ed .pl-obj-note { grid-column: 1 / -1; margin: 0; font-size: 11.5px; }
 .pl-layers { position: absolute; z-index: 500; top: 194px; right: 10px; width: 132px; display: flex; flex-direction: column; gap: 2px; padding: 4px; border-radius: 10px; background: var(--glass-hi); border: 1px solid var(--line-strong); box-shadow: var(--shadow); }
 .pl-layers button { padding: 6px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; font-weight: 500; font-size: 13px; }
 .pl-layers button[aria-pressed="true"] { background: rgba(150, 186, 206, 0.16); color: var(--fg); }
-.pl-tools:has(.pl-obwrap:not([hidden])) + .pl-layers { top: 268px; }
 .pl-locate { position: absolute; z-index: 500; right: 10px; bottom: 64px; width: 38px; height: 38px; background: var(--glass-hi); border: 1px solid var(--line-strong); color: var(--fg); box-shadow: var(--shadow); }
 .pl-hint { position: absolute; z-index: 500; left: 50%; bottom: 18px; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; background: rgba(10, 17, 22, 0.88); border: 1px solid var(--line-strong); font: 500 12px var(--f-mono); color: var(--fg); white-space: nowrap; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .leaflet-container { font: 12px var(--f-body); background: #0a1116; }

@@ -361,12 +361,57 @@
     b.box('wood', [-0.8, -0.05, zc - 0.05], [0.8, 0.05, zc + 0.05], W, 0.3, 1);
     if (lod === 0) [-0.65, 0, 0.65].forEach(x => b.tube('ceramic', [x, 0, zc + 0.05], [x, 0, zc + 0.2], 0.035, 0.05, 10, W, 1, 1));
   }
-  const RECIPES = { tree, conifer, hedge, wall, chimney, building, pole };
+  /** Drawn building: walls to the eaves (window rows per floor), gable ends in brick, the roof from the shared shape */
+  function house(b, d, lod, r, spec) {
+    const PH = root.ArienPhysics; if (!PH || !spec || !spec.poly || spec.poly.length < 3) { building(b, d, lod); return; }
+    const sh = PH.buildingShape(spec), fh = sh.spec.floorHeight, flat = sh.spec.roof === 'flat';
+    const tint = lod === 2 ? hex('#c9c2b6') : W, roofCol = lod === 2 ? hex(flat ? '#9a958c' : '#7b4a3c') : W;
+    const wallKey = lod === 2 ? 'flat' : 'facade', gableKey = lod === 2 ? 'flat' : 'brick', roofKey = lod === 2 ? 'flat' : (flat ? 'concrete' : 'roof');
+    const face = (key, pts, n, uvs, col) => { // triangle, wound so its front faces n
+      const [A, B, C] = pts, e1 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], e2 = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
+      const cr = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+      if (cr[0] * n[0] + cr[1] * n[1] + cr[2] * n[2] < 0) b.tri(key, A, C, B, n, n, n, uvs[0], uvs[2], uvs[1], col);
+      else b.tri(key, A, B, C, n, n, n, uvs[0], uvs[1], uvs[2], col);
+    };
+    for (const w of sh.walls) {
+      const dx = w.b[0] - w.a[0], dy = w.b[1] - w.a[1], len = Math.hypot(dx, dy) || 1, n = [dy / len, -dx / len, 0];
+      const along = (p) => Math.hypot(p[0] - w.a[0], p[1] - w.a[1]);
+      // storeys: one rectangle per edge from the ground to the eaves, the window texture repeating every 3 m × one floor
+      const A = [w.a[0], w.a[1], 0], B = [w.b[0], w.b[1], 0], C = [w.b[0], w.b[1], sh.eaves], D = [w.a[0], w.a[1], sh.eaves];
+      const uv = (p) => [along(p) / 3, p[2] / fh];
+      face(wallKey, [A, B, C], n, [uv(A), uv(B), uv(C)], tint); face(wallKey, [A, C, D], n, [uv(A), uv(C), uv(D)], tint);
+      for (let m = 0; m + 1 < w.tops.length; m++) {
+        const p = w.tops[m], q = w.tops[m + 1]; if (p[2] - sh.eaves < 1e-6 && q[2] - sh.eaves < 1e-6) continue;
+        const pe = [p[0], p[1], sh.eaves], qe = [q[0], q[1], sh.eaves], u2 = (x) => [along(x) / 0.9, x[2] / 0.6];
+        face(gableKey, [pe, qe, q], n, [u2(pe), u2(qe), u2(q)], tint);
+        if (p[2] - sh.eaves > 1e-6) face(gableKey, [pe, q, p], n, [u2(pe), u2(q), u2(p)], tint);
+      }
+    }
+    for (const t of sh.roof) {
+      const [A, B, C] = t, e1 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], e2 = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
+      let n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]]; const l = Math.hypot(...n) || 1;
+      n = n.map(v => v / l); if (n[2] < 0) n = n.map(v => -v);
+      // tiles run down the slope: v along the fall line, u across it
+      const fx = n[0], fy = n[1], fl = Math.hypot(fx, fy);
+      const uvr = fl > 1e-6 ? (p) => [(-p[0] * fy + p[1] * fx) / fl / 2, (p[0] * fx + p[1] * fy) / fl / 2 / Math.max(0.2, n[2])] : (p) => [p[0] / 2, p[1] / 2];
+      face(roofKey, [A, B, C], n, [uvr(A), uvr(B), uvr(C)], roofCol);
+    }
+    if (lod === 0) { // a door on the longest wall, as a hint of scale
+      let best = null; for (const w of sh.walls) { const L = Math.hypot(w.b[0] - w.a[0], w.b[1] - w.a[1]); if (!best || L > best.L) best = { w, L }; }
+      if (best && best.L > 2.5) {
+        const { w, L } = best, ux = (w.b[0] - w.a[0]) / L, uy = (w.b[1] - w.a[1]) / L, n = [uy, -ux, 0], m = [(w.a[0] + w.b[0]) / 2 + n[0] * 0.03, (w.a[1] + w.b[1]) / 2 + n[1] * 0.03];
+        const P0 = [m[0] - ux * 0.5, m[1] - uy * 0.5, 0], P1 = [m[0] + ux * 0.5, m[1] + uy * 0.5, 0], P2 = [P1[0], P1[1], Math.min(2.1, sh.eaves * 0.8)], P3 = [P0[0], P0[1], P2[2]];
+        face('flat', [P0, P1, P2], n, [[0, 0], [1, 0], [1, 1]], hex('#3b3430')); face('flat', [P0, P2, P3], n, [[0, 0], [1, 1], [0, 1]], hex('#3b3430'));
+      }
+    }
+  }
+  const RECIPES = { tree, conifer, hedge, wall, chimney, building, pole, house };
   const FIT = new Set(['tree', 'conifer', 'hedge']);
 
-  function buildGroup(type, dims, lod) {
-    const b = new Builder(); const r = rng(({ tree: 7, conifer: 11, hedge: 3, wall: 5, chimney: 9, building: 13, pole: 17 }[type] || 1) * 101 + lod);
-    (RECIPES[type] || RECIPES.building)(b, dims, lod, r);
+  /** spec: the object itself for drawn buildings (footprint, floors, roof); other types only need dims */
+  function buildGroup(type, dims, lod, spec) {
+    const b = new Builder(); const r = rng(({ tree: 7, conifer: 11, hedge: 3, wall: 5, chimney: 9, building: 13, pole: 17, house: 19 }[type] || 1) * 101 + lod);
+    (RECIPES[type] || RECIPES.building)(b, dims, lod, r, spec);
     // plants are irregular, so stretch each level to the exact size; built objects keep their real trims
     if (FIT.has(type)) b.fit(dims.length, dims.width ?? dims.length, dims.height);
     return b.toGroup();
@@ -375,11 +420,12 @@
 
   const glbCache = new Map();
   /** GLB blob URL for a type at real size and a level of detail (0 close, 2 far) */
-  async function glbUrl(type, dims, lod) {
-    const key = `${type}|${lod}|${dims.length.toFixed(2)}|${(dims.width ?? dims.length).toFixed(2)}|${dims.height.toFixed(2)}`;
+  async function glbUrl(type, dims, lod, spec) {
+    let key = `${type}|${lod}|${dims.length.toFixed(2)}|${(dims.width ?? dims.length).toFixed(2)}|${dims.height.toFixed(2)}`;
+    if (type === 'house' && spec) key += '|' + JSON.stringify([spec.poly, spec.floors, spec.floorHeight, spec.roof, spec.pitch, spec.ridge]);
     if (glbCache.has(key)) return glbCache.get(key);
     const p = (async () => {
-      const group = buildGroup(type, dims, lod);
+      const group = buildGroup(type, dims, lod, spec && { poly: spec.poly, floors: spec.floors, floorHeight: spec.floorHeight, roof: spec.roof, pitch: spec.pitch, ridge: spec.ridge });
       const buf = await new Promise((res, rej) => new (T().GLTFExporter)().parse(group, res, rej, { binary: true, maxTextureSize: 1024 }));
       return URL.createObjectURL(new Blob([buf], { type: 'model/gltf-binary' }));
     })();

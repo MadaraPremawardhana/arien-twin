@@ -27,6 +27,40 @@ near(P.E0(3), 1.034, 0.002, 'E0 at perihelion'); near(P.E0(185), 0.967, 0.002, '
 // Air path z = 1 at zenith
 near(P.airPathZ(Math.PI / 2), 1, 1e-9, 'z at zenith');
 
+// --- Drawn buildings: footprint, floors, roof ---
+{
+  const k35 = Math.tan(35 / R2D);
+  const g = P.buildingFromOutline([[0, 0], [10, 0], [10, 6], [0, 6]], { floors: 2, roof: 'gable' });
+  near(g.heading, 0, 1e-6, 'rectangle drawn along east: heading 0');
+  near(g.x, 5, 1e-6, 'building centre x'); near(g.y, 3, 1e-6, 'building centre y');
+  near(g.dims.length, 10, 1e-6, 'length = long side'); near(g.dims.width, 6, 1e-6, 'width = short side');
+  near(g.dims.height, 5.6 + k35 * 3, 1e-6, 'gable ridge = eaves + tan(pitch)·W/2');
+  const gh = { ...g, type: 'house', z: 0, porosity: 0 };
+  ok(P.OBJECT_TYPES.house.category === 'building' && P.OBJECT_TYPES.tree.category === 'foliage' && P.OBJECT_TYPES.wall.category === 'obstacle', 'object categories');
+  ok(P.CATEGORIES.map(c => c.label).join() === 'Obstacles,Foliage,Buildings', 'category order');
+  ok(P.objectLabel(gh) === 'Building · 2 floors, gable roof', 'building label: ' + P.objectLabel(gh));
+  near(P.objectTrace(gh, [5, -10, 1], [0, 1, 0]).t, 10, 1e-6, 'ray hits the south wall');
+  near(P.objectTrace(gh, [5, -10, 7.5], [0, 1, 0]).t, 10 + (7.5 - 5.6) / k35, 1e-6, 'ray above the eaves hits the roof slope');
+  ok(P.objectTrace(gh, [5, -10, g.dims.height + 0.05], [0, 1, 0]) === null, 'ray just over the ridge passes');
+  ok(P.objectTrace(gh, [-10, 3, g.dims.height - 0.05], [1, 0, 0]) !== null, 'ray along the ridge line hits the gable end');
+  ok(P.objectTrace({ ...gh, roof: 'hip' }, [-10, 3, 5.6 + Math.tan(30 / R2D) * 3 - 0.05], [1, 0, 0]).t > 10 + 0.05, 'hip end slopes back from the wall');
+  near(P.buildingFromOutline([[0, 0], [10, 0], [10, 6], [0, 6]], { roof: 'flat', floors: 3, floorHeight: 3 }).dims.height, 9, 1e-9, 'flat roof = floors × floor height');
+  near(P.buildingFromOutline([[0, 0], [10, 0], [10, 6], [0, 6]], { roof: 'shed' }).dims.height, 5.6 + Math.tan(15 / R2D) * 6, 1e-6, 'mono-pitch rises across the building');
+  // rotated rectangle (long side towards north-east) and the heading convention: local x = (cos h, −sin h)
+  const r = P.buildingFromOutline([[0, 0], [7.0711, 7.0711], [4.2426, 9.8995], [-2.8284, 2.8284]]);
+  near(r.dims.length, 10, 0.01, 'rotated: length'); near(r.dims.width, 4, 0.01, 'rotated: width');
+  const fw = P.footprintWorld({ ...r, type: 'house' });
+  ok(fw.every(([x, y]) => [[0, 0], [7.0711, 7.0711], [4.2426, 9.8995], [-2.8284, 2.8284]].some(([a, b]) => Math.hypot(a - x, b - y) < 0.01)), 'footprint maps back to the drawn corners');
+  // L-shape: the roof covers exactly the floor area
+  const L = P.buildingFromOutline([[0, 0], [10, 0], [10, 4], [4, 4], [4, 10], [0, 10]], { roof: 'hip' });
+  let A = 0; for (const [a, b, c] of P.buildingShape({ ...L, type: 'house' }).roof) A += Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) / 2;
+  near(A, 64, 1e-6, 'L-shaped roof plan area = floor area');
+  ok(!!P.buildingFromOutline([[0, 0], [10, 10], [10, 0], [0, 10]]).error, 'crossing outline is refused');
+  ok(!!P.buildingFromOutline([[0, 0], [1, 0], [1, 1]]).error, 'tiny outline is refused');
+  const sc = P.scaleBuilding({ ...g, type: 'house' }, 20, 6); near(sc.dims.length, 20, 1e-6, 'stretching a building');
+  ok(P.buildingSpec({ floors: 500, roof: 'dome' }).floors === 60 && P.buildingSpec({ roof: 'dome' }).roof === 'gable', 'building settings are clamped');
+}
+
 // --- Kasten clear sky, α = 60° ---
 const sun60 = { alt: 60 / R2D, az: Math.PI, In: 1367 };
 const k = P.kastenHorizontal(sun60, 0, P.DEFAULT_PARAMS.kasten);

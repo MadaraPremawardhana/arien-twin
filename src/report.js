@@ -40,6 +40,7 @@
     return out;
   }
   function objectShape(o) {
+    if (o.poly && o.poly.length >= 3) return { circle: false, pts: o.poly }; // drawn building: its floor plan (world metres)
     if (o.type === 'tree' || o.type === 'conifer' || o.type === 'pole') return { circle: true, c: [o.x, o.y], r: Math.max(0.3, o.dims.length / 2) };
     const h = -o.heading * D2R, c = Math.cos(h), s = Math.sin(h), hl = o.dims.length / 2, hw = (o.dims.width ?? o.dims.length) / 2;
     return { circle: false, pts: [[-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]].map(([x, y]) => [o.x + x * c - y * s, o.y + x * s + y * c]) };
@@ -364,7 +365,7 @@
       ['Annual DC yield', `${num(data.yieldInfo.dcTotal)} kWh before system losses; shading loss ${num(data.yieldInfo.shadingLoss * 100, 1)}%`],
       ['Shading, a year', data.shading && data.shading.year.by.length ? data.shading.year.by.slice(0, 4).map(r => `${r.label}: ${num(r.kwh)} kWh`).join('; ') : 'None found'],
       ['Shading, next 7 days', data.shading && data.shading.week ? `${num(data.shading.week.kwh, 1)} kWh (${num(data.shading.week.pct * 100, 1)}%)${data.shading.week.by[0] ? ', mostly ' + data.shading.week.by[0].label : ''}` : '-'],
-      ['Shading method', `Line trace from every cell toward the sun each hour (year) and 15 minutes (forecast), ${data.shading && data.shading.samples === 2 ? '4 rays per cell' : 'one ray per cell centre'}; opaque obstacles block, canopies pass their transparency${data.shading && data.shading.objects.some(o => o.transparency > 0) ? ' (' + data.shading.objects.filter(o => o.transparency > 0).map(o => `${o.label} ${Math.round(o.transparency * 100)}%`).join(', ') + ')' : ' (all solid)'}; ${data.shading && data.shading.tiles ? '3D-tile skyline included' : '3D tiles not included'}`]
+      ['Shading method', `Line trace from every cell toward the sun each hour (year) and 15 minutes (forecast), ${data.shading && data.shading.samples === 2 ? '4 rays per cell' : 'one ray per cell centre'}; opaque objects block, canopies pass their transparency${data.shading && data.shading.objects.some(o => o.transparency > 0) ? ' (' + data.shading.objects.filter(o => o.transparency > 0).map(o => `${o.label} ${Math.round(o.transparency * 100)}%`).join(', ') + ')' : ' (all solid)'}; ${data.shading && data.shading.tiles ? '3D-tile skyline included' : '3D tiles not included'}`]
     ];
     y = table(doc, PAGE.m, y, specRows, { widths: [34, W - 34], size: 8.5, boldFirst: true });
     y = h2(doc, 'Monthly yield (first year, after system losses)', y + 4);
@@ -400,7 +401,7 @@
     y = h2(doc, 'Method and limits', y + 4);
     [
       'Weather: Open-Meteo. The 7-day forecast uses the best-match national models; the annual yield uses ERA5 reanalysis for the last 12 months, hour by hour.',
-      'Physics: the irradiance model above, with a panel thermal model and beam shading per cell from other panels and the obstacles placed. Diffuse light is not shaded and bypass diodes are not modelled.',
+      'Physics: the irradiance model above, with a panel thermal model and beam shading per cell from other panels and the objects placed. Diffuse light is not shaded and bypass diodes are not modelled.',
       'Home use: a typical household profile scaled to the annual use above, matched to generation hour by hour. Real use varies; minute-level peaks lower self-use slightly.',
       'Money: simple cash flows, not discounted. Prices rise at the rate shown; export payments stay flat. VAT on residential solar is 0% in Great Britain until 31 March 2027.',
       'Carbon: generation times the DESNZ 2026 UK grid factor, held constant; as the grid decarbonises the real saving per kWh falls.',
