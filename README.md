@@ -212,6 +212,9 @@ Pick it under **Models** as the live model or in the comparison; it is labelled 
   - coefficients from Table 1: k_L 0.534, k_M 0.668, k_H 0.154, a 0.409, a_P 2.35, P_0 0.70 mm/h, α_s 0.71, κ 1.39, exponent on c_H 2.
 - **In the twin:** the hour means of global and diffuse are turned into instants like the API radiation (clearness and diffuse fraction at the half hour), then go onto the panels with HDKR and the hour's ground albedo (0.2, rising to 0.71 with 5 cm of snow). The beam part is what cell shading blocks.
 - **Checked against** pvlib 0.16.1 (the paper's own verification library) and a second implementation written from the paper in Python (`tools/usm1_reference.py`, fixtures in `test/fixtures/usm1_reference.json`): cos zenith within 1e-4 of SPA, Bird within 5e-5 (the paper's aerosol coefficient 0.2758 against pvlib's 0.27583), eight test hours (sunrise, rain, snow, dust at altitude, southern hemisphere, night) within 0.4%.
+- **On real weather** (Buckingham, from the cache built on 19 Nov 2026; hours with the sun above 5°), against each weather source's own irradiance (the paper's Reference 1):
+  - ERA5, 14 Nov 2025 – 13 Nov 2026, 3,933 hours: nRMSE 17.6%, MBE −0.1 W/m². By sky: clear 5.2%, few 11.3%, broken 15.2%, overcast 29.5% (paper, 44 sites: 5.0%, 10.5%, 16.8%, 30.3%; temperate 19.1%).
+  - Archived forecasts (Open-Meteo best match), 19 Aug – 18 Nov 2026, 938 hours: nRMSE 31.0%, MBE +27 W/m². The paper notes that the coefficients belong to the weather source; they were fitted on ERA5, IFS and ICON.
 - **Choices the paper leaves open** (for PV Science): sub-steps at the midpoints of six 10-minute slices; geometric zenith without refraction; precipitable water floored at 0.1 cm as in pvlib; van Heuklon's longitude term coded as in Wilson's implementation.
 
 ## Layout
