@@ -2003,16 +2003,49 @@ void main() {
       setTimeout(() => { const q = $('#pl-q'); if (q) { q.value = ''; q.focus(); } }, 150);
       toast('New site: search for its address or postcode, then place the panels. Save it when you are ready.', 'info', 7000);
     };
-    if (!designUnsaved()) { begin(); return; }
+    confirmLeave(begin, 'starting a new site', 'start new');
+  }
+  /** Run next() once the open design is safe to leave: at once when saved, otherwise after asking (save / don't / cancel) */
+  function confirmLeave(next, doing, verb, onCancel) {
+    if (!designUnsaved()) { next(); return; }
     const name = state.designName && !state.designAuto ? state.designName : suggestedName();
-    toastActions(`Save “${name}” before starting a new site?`, [
-      ['Save, then start new', async () => {
+    toastActions(`Save “${name}” before ${doing}?`, [
+      [`Save, then ${verb}`, async () => {
         const r = state.account ? await saveToAccount(name, { auto: state.designAuto || !state.designName }) : saveNamedSite(state.designAuto ? '' : name);
-        if (r) begin();
+        if (r) next(); else if (onCancel) onCancel();
       }, true],
-      ['Start new without saving', begin],
-      ['Cancel']
+      [`${verb[0].toUpperCase() + verb.slice(1)} without saving`, next],
+      ['Cancel', onCancel]
     ], 'info', 30000);
+  }
+  // Results of sites viewed in this session, so switching back to an unchanged site is instant
+  const siteResults = new Map();
+  const resultSig = () => JSON.stringify([state.arrays, state.objects, state.zones, state.site.lat, state.site.lon, state.live, state.compare, state.shade.samples]);
+  function openSiteId() { const x = listSites().find(isOpenSite); return x ? x.id : null; }
+  function stashResults() {
+    const id = openSiteId(), y = state.yieldRes, f = state.forecastRes;
+    if (!id || !y || !f || y.stale || f.stale) return;
+    siteResults.set(id, { sig: resultSig(), yieldRes: y, forecastRes: f, yearWx: state.yearWx, at: Date.now() });
+  }
+  function restoreResults(id) {
+    const c = siteResults.get(id);
+    if (!c || c.sig !== resultSig() || Date.now() - c.at > 30 * 60000) return false; // the forecast is about "today": keep it 30 minutes
+    state.yieldRes = c.yieldRes; state.forecastRes = c.forecastRes; state.yearWx = c.yearWx; renderResults();
+    return true;
+  }
+  /** Open a saved site in a view ('design', 'twin' or 'dashboard'), asking first if the open design has unsaved changes */
+  function switchSite(id, view = 'design', onCancel) {
+    if (state.account ? id === state.accountSiteId && !state.accountDirty : (listSites().find(x => x.id === id) || {}).name === state.designName && !designUnsaved()) {
+      setView(view); if (view === 'dashboard' && window.ArienDashboard) ArienDashboard.show(); return;
+    }
+    confirmLeave(async () => {
+      stashResults();
+      setView(view);
+      await openNamedSite(id);
+      restoreResults(id);
+      if (view === 'twin') flyToDesign(1.2);
+      if (view === 'dashboard' && window.ArienDashboard) ArienDashboard.show();
+    }, 'switching site', 'switch', onCancel);
   }
   function deleteNamedSite(id) {
     if (state.account) { deleteAccountSite(id); return; }
@@ -2417,10 +2450,7 @@ void main() {
     return {
       state, PN, PL, PH, WX, toast, escapeHtml, fmtDay, fmtTime, utcOffset, modelLabel, modelShort, MONTHS, DAYS, cssVar,
       ensureResults, designSummary, listSites, deleteSite: deleteNamedSite, setView, totalKwp, saveSoon,
-      openSite: async (id, view) => {
-        const v = view || 'design'; setView(v); await openNamedSite(id);
-        if (v === 'twin') flyToDesign(1.2);
-      },
+      openSite: switchSite, openSiteId,
       newDesign: () => setView('design'),
       newSite: startNewSite, isOpenSite,
       showTraces: () => { setView('twin'); openDrawer('shading'); setTraces(true); flyToDesign(1.2); },

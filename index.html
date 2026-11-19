@@ -501,6 +501,12 @@ body.view-flat #toasts { bottom: 24px; }
 .as-in input::placeholder { color: var(--sky); opacity: 0.85; }
 .as-in small { width: 70px; color: var(--muted); font-size: 11px; }
 .db-card-head .db-new-site { margin-left: auto; }
+.db-site-pick { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.db-site-pick select { min-width: 200px; max-width: 320px; }
+.db-site-pick[hidden] { display: none; }
+.site-list .sl-main[data-open] { cursor: pointer; }
+.site-list li:not(.open):hover { border-color: var(--line-strong); }
+.site-list [aria-disabled="true"] { opacity: 0.55; cursor: progress; }
 .db-count { display: inline-block; min-width: 20px; padding: 1px 7px; margin-left: 6px; border-radius: 999px; background: rgba(150, 186, 206, 0.14); color: var(--text); font: 600 11px var(--f-mono); letter-spacing: 0; text-align: center; vertical-align: 1px; }
 .site-list li.open { border-color: rgba(243, 178, 60, 0.55); background: rgba(243, 178, 60, 0.06); }
 .site-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -1065,6 +1071,7 @@ body.view-flat #toasts { bottom: 24px; }
     <header class="db-head">
       <div class="db-title"><span class="eyebrow">Dashboard</span><h2 id="db-site">Your solar site</h2><p class="hint" id="db-sub"></p></div>
       <div class="db-actions">
+        <label class="db-site-pick" id="db-site-pick-wrap" hidden><span>Site</span><select id="db-site-pick" aria-label="Show the dashboard for a saved site"></select></label>
         <button class="btn" data-goto="design"><svg><use href="#i-design"/></svg>Edit design</button>
         <button class="btn" data-goto="twin"><svg><use href="#i-panels"/></svg>View in 3D</button>
       </div>
@@ -4252,8 +4259,8 @@ body.view-flat #toasts { bottom: 24px; }
       const open = api.isOpenSite(x);
       const n = x.panels, kwp = x.kwp, d = new Date(x.savedAt), place = x.place || '';
       const when = isFinite(d) ? ` · saved ${d.getDate()} ${api.MONTHS[d.getMonth()]} ${d.getFullYear()}` : '';
-      return `<li${open ? ' class="open"' : ''}><div class="sl-main"><b>${api.escapeHtml(x.name)}${open ? ' <span class="badge info">Open now</span>' : ''}</b><small>${place ? api.escapeHtml(place) + ' · ' : ''}${n} panels · ${num(kwp, 2)} kWp${when}${acct && !x.twin ? ' · made in the web designer' : ''}</small></div>
-        <div class="sl-act"><button class="btn" data-open="${x.id}" data-view="design">Edit design</button><button class="btn" data-open="${x.id}" data-view="twin">Open in 3D</button><button class="icon-btn danger" data-del="${x.id}" title="Delete"><svg><use href="#i-trash"/></svg></button></div></li>`;
+      return `<li${open ? ' class="open"' : ''}><div class="sl-main"${open ? '' : ` data-open="${x.id}" data-view="dashboard" role="button" tabindex="0" title="Show this site's dashboard"`}><b>${api.escapeHtml(x.name)}${open ? ' <span class="badge info">Open now</span>' : ''}</b><small>${place ? api.escapeHtml(place) + ' · ' : ''}${n} panels · ${num(kwp, 2)} kWp${when}${acct && !x.twin ? ' · made in the web designer' : ''}</small></div>
+        <div class="sl-act">${open ? '' : `<button class="btn" data-open="${x.id}" data-view="dashboard">Dashboard</button>`}<button class="btn" data-open="${x.id}" data-view="design">Edit design</button><button class="btn" data-open="${x.id}" data-view="twin">Open in 3D</button><button class="icon-btn danger" data-del="${x.id}" title="Delete"><svg><use href="#i-trash"/></svg></button></div></li>`;
     }).join('')}</ul>`;
   }
   function reportHtml() {
@@ -4261,8 +4268,19 @@ body.view-flat #toasts { bottom: 24px; }
       <button class="btn primary" id="db-pdf"><svg><use href="#i-save"/></svg>Download PDF report</button></div><div class="status" id="db-pdf-status"></div>`;
   }
 
+  /** The header's site picker: saved sites, plus the open design when it is not one of them */
+  function renderPicker() {
+    const sel = $('#db-site-pick'); if (!sel) return;
+    const list = api.listSites(), cur = api.openSiteId();
+    const opts = list.map(x => `<option value="${api.escapeHtml(x.id)}"${x.id === cur ? ' selected' : ''}>${api.escapeHtml(x.name)}</option>`);
+    if (!cur) opts.unshift(`<option value="" selected>${S.arrays.length ? api.escapeHtml(api.siteLabel()) + ' (not saved)' : 'New site (not saved)'}</option>`);
+    sel.innerHTML = opts.join('');
+    sel.disabled = busy || (!list.length);
+    $('#db-site-pick-wrap').hidden = !list.length;
+  }
   function render() {
     const root_ = $('#db-body');
+    renderPicker();
     // the header follows the open design, also before it has panels or results
     $('#db-site').textContent = S.arrays.length || S.designName ? api.siteLabel() : 'New site';
     $('#db-sub').textContent = `${S.site.name} · ${S.site.lat.toFixed(5)}, ${S.site.lon.toFixed(5)}${S.arrays.length ? ' · ' + num(api.totalKwp(), 2) + ' kWp' : ' · no panels yet'}`;
@@ -4304,7 +4322,12 @@ body.view-flat #toasts { bottom: 24px; }
   }
   function wireCommon() {
     const ns = $('#db-new-site'); if (ns) ns.onclick = () => api.newSite();
-    $$('[data-open]', $('#db-body')).forEach(b => { b.onclick = () => api.openSite(b.dataset.open, b.dataset.view); });
+    $$('[data-open]', $('#db-body')).forEach(b => {
+      if (busy) b.setAttribute('aria-disabled', 'true');
+      const go = () => { if (busy) { api.toast('Wait for the results to finish, then switch site.', 'info'); return; } api.openSite(b.dataset.open, b.dataset.view); };
+      b.onclick = go;
+      if (b.tagName !== 'BUTTON') b.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+    });
     $$('[data-del]', $('#db-body')).forEach(b => { b.onclick = () => {
       if (b.dataset.armed) { api.deleteSite(b.dataset.del); render(); return; }
       b.dataset.armed = '1'; b.classList.add('armed'); b.title = 'Click again to delete'; setTimeout(() => { delete b.dataset.armed; b.classList.remove('armed'); }, 3000);
@@ -4373,7 +4396,11 @@ body.view-flat #toasts { bottom: 24px; }
   root.ArienDashboard = {
     /** The saved-site list changed (account sync): redraw if the dashboard is showing */
     rerender() { if (S && S.view === 'dashboard' && !busy) render(); },
-    init(a) { api = a; S = a.state; F = root.ArienFinance; $$('#dashboard [data-goto]').forEach(btn => { btn.onclick = () => api.setView(btn.dataset.goto); }); },
+    init(a) {
+      api = a; S = a.state; F = root.ArienFinance; $$('#dashboard [data-goto]').forEach(btn => { btn.onclick = () => api.setView(btn.dataset.goto); });
+      const sel = $('#db-site-pick');
+      if (sel) sel.onchange = () => { const id = sel.value; if (id) api.openSite(id, 'dashboard', renderPicker); };
+    },
     show() {
       render();
       const need = S.arrays.length && (!S.yieldRes || !S.forecastRes || !S.forecastRes.series || S.yieldRes.stale || S.forecastRes.stale);
@@ -7099,16 +7126,49 @@ void main() {
       setTimeout(() => { const q = $('#pl-q'); if (q) { q.value = ''; q.focus(); } }, 150);
       toast('New site: search for its address or postcode, then place the panels. Save it when you are ready.', 'info', 7000);
     };
-    if (!designUnsaved()) { begin(); return; }
+    confirmLeave(begin, 'starting a new site', 'start new');
+  }
+  /** Run next() once the open design is safe to leave: at once when saved, otherwise after asking (save / don't / cancel) */
+  function confirmLeave(next, doing, verb, onCancel) {
+    if (!designUnsaved()) { next(); return; }
     const name = state.designName && !state.designAuto ? state.designName : suggestedName();
-    toastActions(`Save “${name}” before starting a new site?`, [
-      ['Save, then start new', async () => {
+    toastActions(`Save “${name}” before ${doing}?`, [
+      [`Save, then ${verb}`, async () => {
         const r = state.account ? await saveToAccount(name, { auto: state.designAuto || !state.designName }) : saveNamedSite(state.designAuto ? '' : name);
-        if (r) begin();
+        if (r) next(); else if (onCancel) onCancel();
       }, true],
-      ['Start new without saving', begin],
-      ['Cancel']
+      [`${verb[0].toUpperCase() + verb.slice(1)} without saving`, next],
+      ['Cancel', onCancel]
     ], 'info', 30000);
+  }
+  // Results of sites viewed in this session, so switching back to an unchanged site is instant
+  const siteResults = new Map();
+  const resultSig = () => JSON.stringify([state.arrays, state.objects, state.zones, state.site.lat, state.site.lon, state.live, state.compare, state.shade.samples]);
+  function openSiteId() { const x = listSites().find(isOpenSite); return x ? x.id : null; }
+  function stashResults() {
+    const id = openSiteId(), y = state.yieldRes, f = state.forecastRes;
+    if (!id || !y || !f || y.stale || f.stale) return;
+    siteResults.set(id, { sig: resultSig(), yieldRes: y, forecastRes: f, yearWx: state.yearWx, at: Date.now() });
+  }
+  function restoreResults(id) {
+    const c = siteResults.get(id);
+    if (!c || c.sig !== resultSig() || Date.now() - c.at > 30 * 60000) return false; // the forecast is about "today": keep it 30 minutes
+    state.yieldRes = c.yieldRes; state.forecastRes = c.forecastRes; state.yearWx = c.yearWx; renderResults();
+    return true;
+  }
+  /** Open a saved site in a view ('design', 'twin' or 'dashboard'), asking first if the open design has unsaved changes */
+  function switchSite(id, view = 'design', onCancel) {
+    if (state.account ? id === state.accountSiteId && !state.accountDirty : (listSites().find(x => x.id === id) || {}).name === state.designName && !designUnsaved()) {
+      setView(view); if (view === 'dashboard' && window.ArienDashboard) ArienDashboard.show(); return;
+    }
+    confirmLeave(async () => {
+      stashResults();
+      setView(view);
+      await openNamedSite(id);
+      restoreResults(id);
+      if (view === 'twin') flyToDesign(1.2);
+      if (view === 'dashboard' && window.ArienDashboard) ArienDashboard.show();
+    }, 'switching site', 'switch', onCancel);
   }
   function deleteNamedSite(id) {
     if (state.account) { deleteAccountSite(id); return; }
@@ -7513,10 +7573,7 @@ void main() {
     return {
       state, PN, PL, PH, WX, toast, escapeHtml, fmtDay, fmtTime, utcOffset, modelLabel, modelShort, MONTHS, DAYS, cssVar,
       ensureResults, designSummary, listSites, deleteSite: deleteNamedSite, setView, totalKwp, saveSoon,
-      openSite: async (id, view) => {
-        const v = view || 'design'; setView(v); await openNamedSite(id);
-        if (v === 'twin') flyToDesign(1.2);
-      },
+      openSite: switchSite, openSiteId,
       newDesign: () => setView('design'),
       newSite: startNewSite, isOpenSite,
       showTraces: () => { setView('twin'); openDrawer('shading'); setTraces(true); flyToDesign(1.2); },

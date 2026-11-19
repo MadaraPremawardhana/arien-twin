@@ -27,6 +27,7 @@ A cell keeps the share of direct sun its trace lets through; with **4 rays per c
 
 **Dashboard** (rail, below Meta) summarises a simulated design. After **Simulate in 3D →** the camera frames the design from in front and a year of yield runs in the background, so the dashboard is ready when you open it.
 
+- **Choose a site** with the **Site** picker in the dashboard header, the **Dashboard** button on a row of My sites, or a click on the site's name: the dashboard switches to that site's overview without leaving the page. Results of sites viewed in this session are kept, so switching back to an unchanged site is instant (the 7-day forecast is kept 30 minutes). If the open design has unsaved changes, switching asks first (save, switch without saving, cancel). The picker is disabled while results are being worked out.
 - **My sites** comes first: every saved site (in the ARIEN account when signed in, otherwise this browser), the open one marked *Open now*, each with Edit design, Open in 3D and delete. **New site** starts an empty design in the Design view with the place search ready; if the open design has unsaved changes it first offers *Save, then start new*, *Start new without saving* or *Cancel*.
 - **Overview**: system capacity, panel count, estimated annual production (after system losses), annual savings split into bill savings (solar used at home × import price) and export income (exported kWh × SEG rate), CO₂ reduction, payback, lifetime return, and battery storage (none yet; a preview shows what a 5 kWh battery would change; `ArienFinance.selfConsumption` already accepts a battery for when batteries are designed).
 - **Today's forecast**: solar power through today against typical home use and cloud cover, with the 7-day totals.
@@ -240,7 +241,7 @@ test/account.test.js   node test/account.test.js
 test/account_check.py  the twin inside a copy of the web app's /twin page (handler as published 10 Nov 2026)
 test/run_browser.py    headless Chrome check with mocked CDN, tiles and weather
 test/models_check.py   renders every object at each level of detail
-test/sites_check.py      My sites first on the dashboard, New site (save first, discard), open site marked
+test/sites_check.py      My sites first, New site (save first, discard), open site marked, per-site dashboards (picker, row, kept results)
 test/usm1_check.py       USM-1: listed as experimental, inputs on demand, live power, period run, yield
 test/roof_snap_check.py  arrays dropped on gable, flat and ground surfaces; snap toggle and button
 test/buildings_check.py  object groups, drawing buildings in 3D and on the map, floors and roof, save and reopen

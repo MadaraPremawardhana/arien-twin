@@ -171,8 +171,8 @@
       const open = api.isOpenSite(x);
       const n = x.panels, kwp = x.kwp, d = new Date(x.savedAt), place = x.place || '';
       const when = isFinite(d) ? ` · saved ${d.getDate()} ${api.MONTHS[d.getMonth()]} ${d.getFullYear()}` : '';
-      return `<li${open ? ' class="open"' : ''}><div class="sl-main"><b>${api.escapeHtml(x.name)}${open ? ' <span class="badge info">Open now</span>' : ''}</b><small>${place ? api.escapeHtml(place) + ' · ' : ''}${n} panels · ${num(kwp, 2)} kWp${when}${acct && !x.twin ? ' · made in the web designer' : ''}</small></div>
-        <div class="sl-act"><button class="btn" data-open="${x.id}" data-view="design">Edit design</button><button class="btn" data-open="${x.id}" data-view="twin">Open in 3D</button><button class="icon-btn danger" data-del="${x.id}" title="Delete"><svg><use href="#i-trash"/></svg></button></div></li>`;
+      return `<li${open ? ' class="open"' : ''}><div class="sl-main"${open ? '' : ` data-open="${x.id}" data-view="dashboard" role="button" tabindex="0" title="Show this site's dashboard"`}><b>${api.escapeHtml(x.name)}${open ? ' <span class="badge info">Open now</span>' : ''}</b><small>${place ? api.escapeHtml(place) + ' · ' : ''}${n} panels · ${num(kwp, 2)} kWp${when}${acct && !x.twin ? ' · made in the web designer' : ''}</small></div>
+        <div class="sl-act">${open ? '' : `<button class="btn" data-open="${x.id}" data-view="dashboard">Dashboard</button>`}<button class="btn" data-open="${x.id}" data-view="design">Edit design</button><button class="btn" data-open="${x.id}" data-view="twin">Open in 3D</button><button class="icon-btn danger" data-del="${x.id}" title="Delete"><svg><use href="#i-trash"/></svg></button></div></li>`;
     }).join('')}</ul>`;
   }
   function reportHtml() {
@@ -180,8 +180,19 @@
       <button class="btn primary" id="db-pdf"><svg><use href="#i-save"/></svg>Download PDF report</button></div><div class="status" id="db-pdf-status"></div>`;
   }
 
+  /** The header's site picker: saved sites, plus the open design when it is not one of them */
+  function renderPicker() {
+    const sel = $('#db-site-pick'); if (!sel) return;
+    const list = api.listSites(), cur = api.openSiteId();
+    const opts = list.map(x => `<option value="${api.escapeHtml(x.id)}"${x.id === cur ? ' selected' : ''}>${api.escapeHtml(x.name)}</option>`);
+    if (!cur) opts.unshift(`<option value="" selected>${S.arrays.length ? api.escapeHtml(api.siteLabel()) + ' (not saved)' : 'New site (not saved)'}</option>`);
+    sel.innerHTML = opts.join('');
+    sel.disabled = busy || (!list.length);
+    $('#db-site-pick-wrap').hidden = !list.length;
+  }
   function render() {
     const root_ = $('#db-body');
+    renderPicker();
     // the header follows the open design, also before it has panels or results
     $('#db-site').textContent = S.arrays.length || S.designName ? api.siteLabel() : 'New site';
     $('#db-sub').textContent = `${S.site.name} · ${S.site.lat.toFixed(5)}, ${S.site.lon.toFixed(5)}${S.arrays.length ? ' · ' + num(api.totalKwp(), 2) + ' kWp' : ' · no panels yet'}`;
@@ -223,7 +234,12 @@
   }
   function wireCommon() {
     const ns = $('#db-new-site'); if (ns) ns.onclick = () => api.newSite();
-    $$('[data-open]', $('#db-body')).forEach(b => { b.onclick = () => api.openSite(b.dataset.open, b.dataset.view); });
+    $$('[data-open]', $('#db-body')).forEach(b => {
+      if (busy) b.setAttribute('aria-disabled', 'true');
+      const go = () => { if (busy) { api.toast('Wait for the results to finish, then switch site.', 'info'); return; } api.openSite(b.dataset.open, b.dataset.view); };
+      b.onclick = go;
+      if (b.tagName !== 'BUTTON') b.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+    });
     $$('[data-del]', $('#db-body')).forEach(b => { b.onclick = () => {
       if (b.dataset.armed) { api.deleteSite(b.dataset.del); render(); return; }
       b.dataset.armed = '1'; b.classList.add('armed'); b.title = 'Click again to delete'; setTimeout(() => { delete b.dataset.armed; b.classList.remove('armed'); }, 3000);
@@ -292,7 +308,11 @@
   root.ArienDashboard = {
     /** The saved-site list changed (account sync): redraw if the dashboard is showing */
     rerender() { if (S && S.view === 'dashboard' && !busy) render(); },
-    init(a) { api = a; S = a.state; F = root.ArienFinance; $$('#dashboard [data-goto]').forEach(btn => { btn.onclick = () => api.setView(btn.dataset.goto); }); },
+    init(a) {
+      api = a; S = a.state; F = root.ArienFinance; $$('#dashboard [data-goto]').forEach(btn => { btn.onclick = () => api.setView(btn.dataset.goto); });
+      const sel = $('#db-site-pick');
+      if (sel) sel.onchange = () => { const id = sel.value; if (id) api.openSite(id, 'dashboard', renderPicker); };
+    },
     show() {
       render();
       const need = S.arrays.length && (!S.yieldRes || !S.forecastRes || !S.forecastRes.series || S.yieldRes.stale || S.forecastRes.stale);
