@@ -64,7 +64,13 @@
   }
 
   // ---------------------------------------------------------------- render
-  function card(id, title, body, extra = '') { return `<section class="db-card ${extra}" id="${id}"><header class="db-card-head"><h3>${title}</h3></header>${body}</section>`; }
+  function card(id, title, body, extra = '', action = '') { return `<section class="db-card ${extra}" id="${id}"><header class="db-card-head"><h3>${title}</h3>${action}</header>${body}</section>`; }
+  /** My sites, first on the dashboard, with the button for a new one */
+  function sitesCard() {
+    const n = api.listSites().length;
+    return card('db-sites', `My sites${n ? ` <span class="db-count">${n}</span>` : ''}`, sitesHtml(), 'span-12',
+      '<button class="btn primary db-new-site" id="db-new-site"><svg><use href="#i-plus"/></svg>New site</button>');
+  }
   function kpi(label, value, unit, sub, cls = '') { return `<div class="kpi ${cls}"><span class="kpi-label">${label}</span><div class="kpi-value">${value}${unit ? `<small>${unit}</small>` : ''}</div>${sub ? `<p class="kpi-sub">${sub}</p>` : ''}</div>`; }
 
   function overviewHtml(m) {
@@ -160,11 +166,12 @@
   function sitesHtml() {
     const list = api.listSites(), acct = S.account;
     const note = acct ? `<p class="hint">In your ARIEN account${acct.user.first_name ? ' (' + api.escapeHtml(acct.user.first_name) + ')' : ''}: the same sites as on arien.base44.app, on every device you sign in on.</p>` : '';
-    if (!list.length) return note + '<p class="hint">No saved sites yet. Save a design in the Design view or the Site panel.</p>';
+    if (!list.length) return note + '<p class="hint">No saved sites yet. Start one with <b>New site</b>, or save the design you are working on in the Design view.</p>';
     return `${note}<ul class="site-list">${list.map(x => {
+      const open = api.isOpenSite(x);
       const n = x.panels, kwp = x.kwp, d = new Date(x.savedAt), place = x.place || '';
       const when = isFinite(d) ? ` · saved ${d.getDate()} ${api.MONTHS[d.getMonth()]} ${d.getFullYear()}` : '';
-      return `<li><div class="sl-main"><b>${api.escapeHtml(x.name)}</b><small>${place ? api.escapeHtml(place) + ' · ' : ''}${n} panels · ${num(kwp, 2)} kWp${when}${acct && !x.twin ? ' · made in the web designer' : ''}</small></div>
+      return `<li${open ? ' class="open"' : ''}><div class="sl-main"><b>${api.escapeHtml(x.name)}${open ? ' <span class="badge info">Open now</span>' : ''}</b><small>${place ? api.escapeHtml(place) + ' · ' : ''}${n} panels · ${num(kwp, 2)} kWp${when}${acct && !x.twin ? ' · made in the web designer' : ''}</small></div>
         <div class="sl-act"><button class="btn" data-open="${x.id}" data-view="design">Edit design</button><button class="btn" data-open="${x.id}" data-view="twin">Open in 3D</button><button class="icon-btn danger" data-del="${x.id}" title="Delete"><svg><use href="#i-trash"/></svg></button></div></li>`;
     }).join('')}</ul>`;
   }
@@ -175,20 +182,24 @@
 
   function render() {
     const root_ = $('#db-body');
+    // the header follows the open design, also before it has panels or results
+    $('#db-site').textContent = S.arrays.length || S.designName ? api.siteLabel() : 'New site';
+    $('#db-sub').textContent = `${S.site.name} · ${S.site.lat.toFixed(5)}, ${S.site.lon.toFixed(5)}${S.arrays.length ? ' · ' + num(api.totalKwp(), 2) + ' kWp' : ' · no panels yet'}`;
     if (!S.arrays.length) {
-      root_.innerHTML = `<div class="db-empty"><h3>Design a system to see its dashboard</h3><p class="hint">Place panels on the satellite map, simulate them in 3D, then come back here for production, savings and the report.</p><button class="btn primary" id="db-go-design">Open Design</button></div>
-        ${card('db-sites', 'My sites', sitesHtml())}`;
+      root_.innerHTML = `${sitesCard()}<div class="db-empty"><h3>Design a system to see its dashboard</h3><p class="hint">Place panels on the satellite map, simulate them in 3D, then come back here for production, savings and the report.</p><button class="btn primary" id="db-go-design">Open Design</button></div>`;
       $('#db-go-design').onclick = () => api.newDesign(); wireCommon(); setFoot(null); return;
     }
     const m = compute();
     if (!m) {
-      root_.innerHTML = `<div class="db-empty"><span class="spinner"></span><h3>${busy ? 'Simulating a year of weather and the next 7 days…' : 'Results needed'}</h3><p class="hint">${busy ? 'This takes a few seconds.' : 'Run the forecast and yield estimate for this design.'}</p>${busy ? '' : '<button class="btn primary" id="db-run">Run now</button>'}</div>${card('db-sites', 'My sites', sitesHtml())}`;
+      root_.innerHTML = `<div class="db-empty"><span class="spinner"></span><h3>${busy ? 'Simulating a year of weather and the next 7 days…' : 'Results needed'}</h3><p class="hint">${busy ? 'This takes a few seconds.' : 'Run the forecast and yield estimate for this design.'}</p>${busy ? '' : '<button class="btn primary" id="db-run">Run now</button>'}</div>`;
+      root_.insertAdjacentHTML('afterbegin', sitesCard());
       const r = $('#db-run'); if (r) r.onclick = () => run(); wireCommon(); setFoot(null); return;
     }
     const stale = (S.yieldRes && S.yieldRes.stale) || (S.forecastRes && S.forecastRes.stale);
     $('#db-site').textContent = api.siteLabel();
     $('#db-sub').textContent = `${S.site.name} · ${S.site.lat.toFixed(5)}, ${S.site.lon.toFixed(5)} · ${num(m.kwp, 2)} kWp`;
-    root_.innerHTML = `${stale ? '<div class="db-stale">The design changed since these results. <button class="btn" id="db-rerun">Update results</button></div>' : ''}
+    root_.innerHTML = `${sitesCard()}
+      ${stale ? '<div class="db-stale">The design changed since these results. <button class="btn" id="db-rerun">Update results</button></div>' : ''}
       ${card('db-overview', 'Overview', overviewHtml(m), 'span-12')}
       ${card('db-forecast', 'Today’s forecast', forecastHtml(m), 'span-7')}
       ${card('db-reco', 'Recommendations', recoHtml(m), 'span-5')}
@@ -196,8 +207,7 @@
       ${card('db-finance', 'Financial overview', financeHtml(m), 'span-12')}
       ${card('db-monthly', 'Monthly production', monthlyHtml(m), 'span-12')}
       ${card('db-assume', 'Assumptions', assumptionsHtml(m), 'span-12')}
-      ${card('db-sites', 'My sites', sitesHtml(), 'span-7')}
-      ${card('db-reports', 'Reports', reportHtml(), 'span-5')}`;
+      ${card('db-reports', 'Reports', reportHtml(), 'span-12')}`;
     drawCharts(m); wireCommon(); setFoot(m);
     const rr = $('#db-rerun'); if (rr) rr.onclick = () => run(true);
     $('#db-horizon').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; horizon = +b.dataset.h; render(); };
@@ -212,6 +222,7 @@
     const st = $('#db-show-traces'); if (st) st.onclick = () => api.showTraces();
   }
   function wireCommon() {
+    const ns = $('#db-new-site'); if (ns) ns.onclick = () => api.newSite();
     $$('[data-open]', $('#db-body')).forEach(b => { b.onclick = () => api.openSite(b.dataset.open, b.dataset.view); });
     $$('[data-del]', $('#db-body')).forEach(b => { b.onclick = () => {
       if (b.dataset.armed) { api.deleteSite(b.dataset.del); render(); return; }

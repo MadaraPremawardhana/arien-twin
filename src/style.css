@@ -409,6 +409,7 @@ body.view-flat #toasts { bottom: 24px; }
 .db-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; padding: 16px 22px 8px; align-items: start; }
 .db-card { grid-column: span 12; background: rgba(6, 12, 16, 0.42); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .db-card.span-8 { grid-column: span 8; } .db-card.span-7 { grid-column: span 7; } .db-card.span-5 { grid-column: span 5; } .db-card.span-4 { grid-column: span 4; }
+.db-card-head { display: flex; align-items: center; gap: 10px; }
 .db-card-head h3 { margin: 0; font: 600 14px/1.2 var(--f-display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .db-empty { grid-column: span 12; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 20px; text-align: center; border: 1px dashed var(--line-strong); border-radius: 12px; }
 .db-empty h3 { margin: 0; font: 600 20px var(--f-display); letter-spacing: 0.04em; }
@@ -457,6 +458,9 @@ body.view-flat #toasts { bottom: 24px; }
 .as-in input { width: 96px; padding: 4px 6px; font-size: 12.5px; text-align: right; }
 .as-in input::placeholder { color: var(--sky); opacity: 0.85; }
 .as-in small { width: 70px; color: var(--muted); font-size: 11px; }
+.db-card-head .db-new-site { margin-left: auto; }
+.db-count { display: inline-block; min-width: 20px; padding: 1px 7px; margin-left: 6px; border-radius: 999px; background: rgba(150, 186, 206, 0.14); color: var(--text); font: 600 11px var(--f-mono); letter-spacing: 0; text-align: center; vertical-align: 1px; }
+.site-list li.open { border-color: rgba(243, 178, 60, 0.55); background: rgba(243, 178, 60, 0.06); }
 .site-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .site-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line); background: rgba(150, 186, 206, 0.04); flex-wrap: wrap; }
 .sl-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

@@ -1980,6 +1980,40 @@ void main() {
     }
     catch (e) { toast('Could not open that site: ' + e.message, 'err'); }
   }
+  /** Is the open design different from its saved copy (or never saved)? */
+  function designUnsaved() {
+    if (!state.arrays.length && !state.objects.length) return false;
+    if (state.account) return !state.accountSiteId || !!state.accountDirty;
+    const x = listLocalSites().find(e => e.name === state.designName);
+    if (!x || !x.snap) return true;
+    const now = sceneSnapshot();
+    return JSON.stringify([x.snap.arrays || [], x.snap.objects || []]) !== JSON.stringify([now.arrays || [], now.objects || []]);
+  }
+  /** Which saved site is open now (for marking it in lists) */
+  function isOpenSite(x) { return state.account ? x.id === state.accountSiteId : !!state.designName && x.name === state.designName; }
+  /** Start a new site: an empty design, then the Design view with the place search ready. Offers to save the open one first. */
+  function startNewSite() {
+    const begin = () => {
+      stopPlacing();
+      state.arrays = []; state.objects = []; state.zones = []; state.sel = null; state.shade.profiles = {};
+      geoms.clear(); state.forecastRes = null; state.yieldRes = null; state.yearWx = null; state.run = null;
+      state.designName = ''; state.designAuto = true; state.accountSiteId = null;
+      rebuildAll(); fillEditors(); designChanged(true); state.accountDirty = false; saveSoon(); dashSitesChanged();
+      setView('design');
+      setTimeout(() => { const q = $('#pl-q'); if (q) { q.value = ''; q.focus(); } }, 150);
+      toast('New site: search for its address or postcode, then place the panels. Save it when you are ready.', 'info', 7000);
+    };
+    if (!designUnsaved()) { begin(); return; }
+    const name = state.designName && !state.designAuto ? state.designName : suggestedName();
+    toastActions(`Save “${name}” before starting a new site?`, [
+      ['Save, then start new', async () => {
+        const r = state.account ? await saveToAccount(name, { auto: state.designAuto || !state.designName }) : saveNamedSite(state.designAuto ? '' : name);
+        if (r) begin();
+      }, true],
+      ['Start new without saving', begin],
+      ['Cancel']
+    ], 'info', 30000);
+  }
   function deleteNamedSite(id) {
     if (state.account) { deleteAccountSite(id); return; }
     try { PL.removeSite(localStorage, id); } catch (e) { /* ignore */ } renderSavedSites();
@@ -2388,6 +2422,7 @@ void main() {
         if (v === 'twin') flyToDesign(1.2);
       },
       newDesign: () => setView('design'),
+      newSite: startNewSite, isOpenSite,
       showTraces: () => { setView('twin'); openDrawer('shading'); setTraces(true); flyToDesign(1.2); },
       siteLabel: () => state.designName || suggestedName(),
       weatherSources: () => {

@@ -451,6 +451,7 @@ body.view-flat #toasts { bottom: 24px; }
 .db-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; padding: 16px 22px 8px; align-items: start; }
 .db-card { grid-column: span 12; background: rgba(6, 12, 16, 0.42); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .db-card.span-8 { grid-column: span 8; } .db-card.span-7 { grid-column: span 7; } .db-card.span-5 { grid-column: span 5; } .db-card.span-4 { grid-column: span 4; }
+.db-card-head { display: flex; align-items: center; gap: 10px; }
 .db-card-head h3 { margin: 0; font: 600 14px/1.2 var(--f-display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
 .db-empty { grid-column: span 12; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 20px; text-align: center; border: 1px dashed var(--line-strong); border-radius: 12px; }
 .db-empty h3 { margin: 0; font: 600 20px var(--f-display); letter-spacing: 0.04em; }
@@ -499,6 +500,9 @@ body.view-flat #toasts { bottom: 24px; }
 .as-in input { width: 96px; padding: 4px 6px; font-size: 12.5px; text-align: right; }
 .as-in input::placeholder { color: var(--sky); opacity: 0.85; }
 .as-in small { width: 70px; color: var(--muted); font-size: 11px; }
+.db-card-head .db-new-site { margin-left: auto; }
+.db-count { display: inline-block; min-width: 20px; padding: 1px 7px; margin-left: 6px; border-radius: 999px; background: rgba(150, 186, 206, 0.14); color: var(--text); font: 600 11px var(--f-mono); letter-spacing: 0; text-align: center; vertical-align: 1px; }
+.site-list li.open { border-color: rgba(243, 178, 60, 0.55); background: rgba(243, 178, 60, 0.06); }
 .site-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .site-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line); background: rgba(150, 186, 206, 0.04); flex-wrap: wrap; }
 .sl-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
@@ -4141,7 +4145,13 @@ body.view-flat #toasts { bottom: 24px; }
   }
 
   // ---------------------------------------------------------------- render
-  function card(id, title, body, extra = '') { return `<section class="db-card ${extra}" id="${id}"><header class="db-card-head"><h3>${title}</h3></header>${body}</section>`; }
+  function card(id, title, body, extra = '', action = '') { return `<section class="db-card ${extra}" id="${id}"><header class="db-card-head"><h3>${title}</h3>${action}</header>${body}</section>`; }
+  /** My sites, first on the dashboard, with the button for a new one */
+  function sitesCard() {
+    const n = api.listSites().length;
+    return card('db-sites', `My sites${n ? ` <span class="db-count">${n}</span>` : ''}`, sitesHtml(), 'span-12',
+      '<button class="btn primary db-new-site" id="db-new-site"><svg><use href="#i-plus"/></svg>New site</button>');
+  }
   function kpi(label, value, unit, sub, cls = '') { return `<div class="kpi ${cls}"><span class="kpi-label">${label}</span><div class="kpi-value">${value}${unit ? `<small>${unit}</small>` : ''}</div>${sub ? `<p class="kpi-sub">${sub}</p>` : ''}</div>`; }
 
   function overviewHtml(m) {
@@ -4237,11 +4247,12 @@ body.view-flat #toasts { bottom: 24px; }
   function sitesHtml() {
     const list = api.listSites(), acct = S.account;
     const note = acct ? `<p class="hint">In your ARIEN account${acct.user.first_name ? ' (' + api.escapeHtml(acct.user.first_name) + ')' : ''}: the same sites as on arien.base44.app, on every device you sign in on.</p>` : '';
-    if (!list.length) return note + '<p class="hint">No saved sites yet. Save a design in the Design view or the Site panel.</p>';
+    if (!list.length) return note + '<p class="hint">No saved sites yet. Start one with <b>New site</b>, or save the design you are working on in the Design view.</p>';
     return `${note}<ul class="site-list">${list.map(x => {
+      const open = api.isOpenSite(x);
       const n = x.panels, kwp = x.kwp, d = new Date(x.savedAt), place = x.place || '';
       const when = isFinite(d) ? ` · saved ${d.getDate()} ${api.MONTHS[d.getMonth()]} ${d.getFullYear()}` : '';
-      return `<li><div class="sl-main"><b>${api.escapeHtml(x.name)}</b><small>${place ? api.escapeHtml(place) + ' · ' : ''}${n} panels · ${num(kwp, 2)} kWp${when}${acct && !x.twin ? ' · made in the web designer' : ''}</small></div>
+      return `<li${open ? ' class="open"' : ''}><div class="sl-main"><b>${api.escapeHtml(x.name)}${open ? ' <span class="badge info">Open now</span>' : ''}</b><small>${place ? api.escapeHtml(place) + ' · ' : ''}${n} panels · ${num(kwp, 2)} kWp${when}${acct && !x.twin ? ' · made in the web designer' : ''}</small></div>
         <div class="sl-act"><button class="btn" data-open="${x.id}" data-view="design">Edit design</button><button class="btn" data-open="${x.id}" data-view="twin">Open in 3D</button><button class="icon-btn danger" data-del="${x.id}" title="Delete"><svg><use href="#i-trash"/></svg></button></div></li>`;
     }).join('')}</ul>`;
   }
@@ -4252,20 +4263,24 @@ body.view-flat #toasts { bottom: 24px; }
 
   function render() {
     const root_ = $('#db-body');
+    // the header follows the open design, also before it has panels or results
+    $('#db-site').textContent = S.arrays.length || S.designName ? api.siteLabel() : 'New site';
+    $('#db-sub').textContent = `${S.site.name} · ${S.site.lat.toFixed(5)}, ${S.site.lon.toFixed(5)}${S.arrays.length ? ' · ' + num(api.totalKwp(), 2) + ' kWp' : ' · no panels yet'}`;
     if (!S.arrays.length) {
-      root_.innerHTML = `<div class="db-empty"><h3>Design a system to see its dashboard</h3><p class="hint">Place panels on the satellite map, simulate them in 3D, then come back here for production, savings and the report.</p><button class="btn primary" id="db-go-design">Open Design</button></div>
-        ${card('db-sites', 'My sites', sitesHtml())}`;
+      root_.innerHTML = `${sitesCard()}<div class="db-empty"><h3>Design a system to see its dashboard</h3><p class="hint">Place panels on the satellite map, simulate them in 3D, then come back here for production, savings and the report.</p><button class="btn primary" id="db-go-design">Open Design</button></div>`;
       $('#db-go-design').onclick = () => api.newDesign(); wireCommon(); setFoot(null); return;
     }
     const m = compute();
     if (!m) {
-      root_.innerHTML = `<div class="db-empty"><span class="spinner"></span><h3>${busy ? 'Simulating a year of weather and the next 7 days…' : 'Results needed'}</h3><p class="hint">${busy ? 'This takes a few seconds.' : 'Run the forecast and yield estimate for this design.'}</p>${busy ? '' : '<button class="btn primary" id="db-run">Run now</button>'}</div>${card('db-sites', 'My sites', sitesHtml())}`;
+      root_.innerHTML = `<div class="db-empty"><span class="spinner"></span><h3>${busy ? 'Simulating a year of weather and the next 7 days…' : 'Results needed'}</h3><p class="hint">${busy ? 'This takes a few seconds.' : 'Run the forecast and yield estimate for this design.'}</p>${busy ? '' : '<button class="btn primary" id="db-run">Run now</button>'}</div>`;
+      root_.insertAdjacentHTML('afterbegin', sitesCard());
       const r = $('#db-run'); if (r) r.onclick = () => run(); wireCommon(); setFoot(null); return;
     }
     const stale = (S.yieldRes && S.yieldRes.stale) || (S.forecastRes && S.forecastRes.stale);
     $('#db-site').textContent = api.siteLabel();
     $('#db-sub').textContent = `${S.site.name} · ${S.site.lat.toFixed(5)}, ${S.site.lon.toFixed(5)} · ${num(m.kwp, 2)} kWp`;
-    root_.innerHTML = `${stale ? '<div class="db-stale">The design changed since these results. <button class="btn" id="db-rerun">Update results</button></div>' : ''}
+    root_.innerHTML = `${sitesCard()}
+      ${stale ? '<div class="db-stale">The design changed since these results. <button class="btn" id="db-rerun">Update results</button></div>' : ''}
       ${card('db-overview', 'Overview', overviewHtml(m), 'span-12')}
       ${card('db-forecast', 'Today’s forecast', forecastHtml(m), 'span-7')}
       ${card('db-reco', 'Recommendations', recoHtml(m), 'span-5')}
@@ -4273,8 +4288,7 @@ body.view-flat #toasts { bottom: 24px; }
       ${card('db-finance', 'Financial overview', financeHtml(m), 'span-12')}
       ${card('db-monthly', 'Monthly production', monthlyHtml(m), 'span-12')}
       ${card('db-assume', 'Assumptions', assumptionsHtml(m), 'span-12')}
-      ${card('db-sites', 'My sites', sitesHtml(), 'span-7')}
-      ${card('db-reports', 'Reports', reportHtml(), 'span-5')}`;
+      ${card('db-reports', 'Reports', reportHtml(), 'span-12')}`;
     drawCharts(m); wireCommon(); setFoot(m);
     const rr = $('#db-rerun'); if (rr) rr.onclick = () => run(true);
     $('#db-horizon').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; horizon = +b.dataset.h; render(); };
@@ -4289,6 +4303,7 @@ body.view-flat #toasts { bottom: 24px; }
     const st = $('#db-show-traces'); if (st) st.onclick = () => api.showTraces();
   }
   function wireCommon() {
+    const ns = $('#db-new-site'); if (ns) ns.onclick = () => api.newSite();
     $$('[data-open]', $('#db-body')).forEach(b => { b.onclick = () => api.openSite(b.dataset.open, b.dataset.view); });
     $$('[data-del]', $('#db-body')).forEach(b => { b.onclick = () => {
       if (b.dataset.armed) { api.deleteSite(b.dataset.del); render(); return; }
@@ -7061,6 +7076,40 @@ void main() {
     }
     catch (e) { toast('Could not open that site: ' + e.message, 'err'); }
   }
+  /** Is the open design different from its saved copy (or never saved)? */
+  function designUnsaved() {
+    if (!state.arrays.length && !state.objects.length) return false;
+    if (state.account) return !state.accountSiteId || !!state.accountDirty;
+    const x = listLocalSites().find(e => e.name === state.designName);
+    if (!x || !x.snap) return true;
+    const now = sceneSnapshot();
+    return JSON.stringify([x.snap.arrays || [], x.snap.objects || []]) !== JSON.stringify([now.arrays || [], now.objects || []]);
+  }
+  /** Which saved site is open now (for marking it in lists) */
+  function isOpenSite(x) { return state.account ? x.id === state.accountSiteId : !!state.designName && x.name === state.designName; }
+  /** Start a new site: an empty design, then the Design view with the place search ready. Offers to save the open one first. */
+  function startNewSite() {
+    const begin = () => {
+      stopPlacing();
+      state.arrays = []; state.objects = []; state.zones = []; state.sel = null; state.shade.profiles = {};
+      geoms.clear(); state.forecastRes = null; state.yieldRes = null; state.yearWx = null; state.run = null;
+      state.designName = ''; state.designAuto = true; state.accountSiteId = null;
+      rebuildAll(); fillEditors(); designChanged(true); state.accountDirty = false; saveSoon(); dashSitesChanged();
+      setView('design');
+      setTimeout(() => { const q = $('#pl-q'); if (q) { q.value = ''; q.focus(); } }, 150);
+      toast('New site: search for its address or postcode, then place the panels. Save it when you are ready.', 'info', 7000);
+    };
+    if (!designUnsaved()) { begin(); return; }
+    const name = state.designName && !state.designAuto ? state.designName : suggestedName();
+    toastActions(`Save “${name}” before starting a new site?`, [
+      ['Save, then start new', async () => {
+        const r = state.account ? await saveToAccount(name, { auto: state.designAuto || !state.designName }) : saveNamedSite(state.designAuto ? '' : name);
+        if (r) begin();
+      }, true],
+      ['Start new without saving', begin],
+      ['Cancel']
+    ], 'info', 30000);
+  }
   function deleteNamedSite(id) {
     if (state.account) { deleteAccountSite(id); return; }
     try { PL.removeSite(localStorage, id); } catch (e) { /* ignore */ } renderSavedSites();
@@ -7469,6 +7518,7 @@ void main() {
         if (v === 'twin') flyToDesign(1.2);
       },
       newDesign: () => setView('design'),
+      newSite: startNewSite, isOpenSite,
       showTraces: () => { setView('twin'); openDrawer('shading'); setTraces(true); flyToDesign(1.2); },
       siteLabel: () => state.designName || suggestedName(),
       weatherSources: () => {
