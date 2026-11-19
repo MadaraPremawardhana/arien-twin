@@ -125,13 +125,14 @@ details[open] summary { margin-bottom: 8px; }
 .toggle input { margin-top: 2px; accent-color: var(--sun); }
 .status { font-size: 12.5px; color: var(--muted); min-height: 0; }
 .status:empty { display: none; }
-.status.ok { color: var(--good); } .status.err { color: var(--bad); }
+.status.ok { color: var(--good); } .status.err { color: var(--bad); } .status.warn { color: var(--warn); }
 .status a { color: inherit; }
 .warnline { color: var(--warn); margin-top: -4px; }
 .progress { height: 6px; border-radius: 3px; background: rgba(150, 186, 206, 0.12); overflow: hidden; }
 .progress span { display: block; height: 100%; width: 0; background: var(--sun); transition: width 0.15s; }
 .badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font: 600 10px/1.5 var(--f-display); letter-spacing: 0.08em; text-transform: uppercase; }
 .badge.warn { background: rgba(227, 160, 74, 0.16); color: var(--warn); }
+.badge.exp { background: rgba(242, 140, 200, 0.16); color: #f28cc8; }
 .badge.info { background: rgba(108, 195, 232, 0.14); color: var(--sky); }
 
 /* lists */

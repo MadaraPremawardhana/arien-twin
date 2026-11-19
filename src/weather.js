@@ -12,6 +12,12 @@
   const BASE_VARS = ['temperature_2m', 'cloud_cover', 'wind_speed_10m', 'wind_direction_10m', 'weather_code',
     'shortwave_radiation', 'diffuse_radiation'];
   const PREV_VARS = BASE_VARS;
+  // USM-1 (experimental) needs more than the thesis variables. They are fetched only when USM-1 is in use, in
+  // requests of their own, so a variable an endpoint lacks cannot break the main weather load.
+  const USM_VARS = ['cloud_cover_low', 'cloud_cover_mid', 'cloud_cover_high', 'precipitation', 'surface_pressure', 'relative_humidity_2m'];
+  const USM_SNOW = ['snow_depth'];
+  const AOD_HOST = 'https://air-quality-api.open-meteo.com/v1/air-quality'; // CAMS aerosol optical depth at 550 nm
+  const AOD_DEFAULT = 0.1; // used when CAMS has no value for the hour
   /** Precipitation rate (mm/h) and snow estimated from the WMO weather code, used only for visuals */
   const CODE_PRECIP = { 51: 0.2, 53: 0.5, 55: 1, 56: 0.3, 57: 0.8, 61: 0.8, 63: 2.5, 65: 6, 66: 1, 67: 3, 80: 1.5, 81: 4, 82: 10, 95: 5, 96: 8, 99: 12 };
   const CODE_SNOW = { 71: 0.5, 73: 1.5, 75: 3, 77: 0.3, 85: 1, 86: 3 };
@@ -64,8 +70,11 @@
       temp: get('temperature_2m'), cloud: get('cloud_cover'), precip: get('precipitation'), rain: null, snow: get('snowfall'),
       code: get('weather_code'), wind: get('wind_speed_10m'), windDir: get('wind_direction_10m'),
       ghi: get('shortwave_radiation'), bhi: get('direct_radiation'), dhi: get('diffuse_radiation'), dni: null,
-      radiationAveraging: 'backward-hour'
+      radiationAveraging: 'backward-hour',
+      cL: get('cloud_cover_low'), cM: get('cloud_cover_mid'), cH: get('cloud_cover_high'), pres: get('surface_pressure'),
+      rh: get('relative_humidity_2m'), snowDepth: get('snow_depth'), aod: h.aerosol_optical_depth || null
     };
+    if (s.precip) s.precipMeasured = true;
     const code = s.code || [];
     if (!s.precip) { s.precip = code.map(c => CODE_PRECIP[c] || 0); s.precipFromCode = true; }
     if (!s.snow) s.snow = code.map(c => CODE_SNOW[c] || 0);
@@ -106,7 +115,112 @@
       let next = NaN; for (let i = n - 1; i >= 0; i--) { if (isFinite(a[i])) next = a[i]; else a[i] = isFinite(next) ? next : (key === 'kt' ? 0 : 1); }
     }
     s.start = n ? s.time[0] : 0; s.end = n ? s.time[n - 1] : 0;
+    computeUsm(s);
     return s;
+  }
+
+  /** Radiation hour means → clearness and diffuse-fraction knots at the hour midpoints (for sample()) */
+  function knots(s, ghi, dhi) {
+    const n = s.time.length, kt = new Array(n), kd = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const E = PH.meanExtraterrestrialHorizontal(s.time[i], s.lat, s.lon);
+      kt[i] = E > 5 ? Math.min(1.1, ghi[i] / E) : NaN;
+      kd[i] = ghi[i] > 1 ? Math.min(1, dhi[i] / ghi[i]) : NaN;
+    }
+    for (const a of [kt, kd]) {
+      let last = NaN; for (let i = 0; i < n; i++) { if (isFinite(a[i])) last = a[i]; else if (isFinite(last)) a[i] = last; }
+      let next = NaN; for (let i = n - 1; i >= 0; i--) { if (isFinite(a[i])) next = a[i]; else a[i] = isFinite(next) ? next : (a === kt ? 0 : 1); }
+    }
+    return { kt, kd };
+  }
+  /**
+   * USM-1 hour means for every hour that has cloud layers (series.usm), or series.usm = null.
+   * Instantaneous inputs are averaged over the hour's start and end (paper, Section 4.1); precipitation is the
+   * hour's own total. Missing pressure falls back to the standard atmosphere at the site's elevation, missing
+   * humidity to 75%, missing snow depth to none and missing aerosol to AOD_DEFAULT; series.usmNotes lists them.
+   */
+  function computeUsm(s) {
+    const n = s.time.length, has = (a) => Array.isArray(a) && a.some(v => v != null && isFinite(v));
+    if (!n || !has(s.cL) || !has(s.cM) || !has(s.cH)) { s.usm = null; return; }
+    const notes = [];
+    const val = (a, i) => (a && a[i] != null && isFinite(a[i]) ? a[i] : null);
+    const hourMean = (a, i, def) => {
+      const v1 = val(a, i), v0 = i > 0 ? val(a, i - 1) : null;
+      if (v1 != null && v0 != null) return (v0 + v1) / 2; if (v1 != null) return v1; if (v0 != null) return v0; return def;
+    };
+    const pStd = 1013.25 * Math.exp(-(s.elevation || 0) / 8434.5);
+    if (!has(s.pres)) notes.push(`pressure from elevation (${pStd.toFixed(0)} hPa)`);
+    if (!has(s.rh)) notes.push('humidity 75% (no data)');
+    if (!has(s.snowDepth)) notes.push('no snow depth');
+    if (!has(s.aod)) notes.push(`aerosol ${AOD_DEFAULT} (no CAMS data)`);
+    if (s.precipFromCode) notes.push('precipitation estimated from the weather code');
+    const ghi = new Array(n), dhi = new Array(n), albedo = new Array(n), kc = new Array(n);
+    let aodMissing = 0;
+    for (let i = 0; i < n; i++) {
+      const aod = hourMean(s.aod, i, null); if (aod == null) aodMissing++;
+      const cT = hourMean(s.cloud, i, null);
+      const r = PH.usm1Hour({
+        tEnd: s.time[i], T: hourMean(s.temp, i, 10), RH: hourMean(s.rh, i, 75), p: hourMean(s.pres, i, pStd),
+        cL: hourMean(s.cL, i, 0) / 100, cM: hourMean(s.cM, i, 0) / 100, cH: hourMean(s.cH, i, 0) / 100, cT: cT == null ? null : cT / 100,
+        P: val(s.precip, i) || 0, ds: hourMean(s.snowDepth, i, 0), aod: aod == null ? AOD_DEFAULT : aod
+      }, s.lat, s.lon);
+      ghi[i] = r.G; dhi[i] = r.D; albedo[i] = r.rhoG; kc[i] = r.kc;
+    }
+    if (has(s.aod) && aodMissing) notes.push(`aerosol ${AOD_DEFAULT} for ${aodMissing} hour${aodMissing > 1 ? 's' : ''} CAMS does not cover`);
+    const k = knots(s, ghi, dhi);
+    s.usm = { ghi, dhi, albedo, kc, kt: k.kt, kd: k.kd };
+    s.usmNotes = notes;
+  }
+
+  function usmUrl(opts, vars, host) {
+    const common = { latitude: opts.lat.toFixed(5), longitude: opts.lon.toFixed(5), timezone: 'auto', timeformat: 'unixtime' };
+    const sfx = opts.mode === 'previous' ? `_previous_day${Math.max(1, Math.min(7, opts.leadDays | 0))}` : '';
+    const span = opts.mode === 'current' ? { past_days: 1, forecast_days: 2 } : opts.mode === 'forecast' ? { forecast_days: 7 } : { start_date: opts.start, end_date: opts.end };
+    if (host) return `${host}?${q({ ...common, hourly: vars.join(','), ...span })}`;
+    let m = MODES[opts.mode], key = (opts.apiKey || '').trim();
+    const extra = key ? { apikey: key } : {};
+    if (key) m = { ...m, host: m.host.replace('https://', 'https://customer-') };
+    return `${m.host}?${q({ ...common, ...extra, hourly: vars.map(v => v + sfx).join(','), ...span })}`;
+  }
+  /** Copy hourly columns from another Open-Meteo answer into the series, matched by time */
+  function mergeHourly(s, json, map, sfx = '') {
+    const h = json && json.hourly; if (!h || !h.time) return 0;
+    const at = new Map(h.time.map((t, i) => [t * 1000, i])); let got = 0;
+    for (const [src, dst] of Object.entries(map)) {
+      const col = h[src + sfx] || h[src]; if (!col) continue;
+      const prev = s[dst]; s[dst] = s.time.map((t, j) => { const i = at.get(t); return i == null ? (prev ? prev[j] : null) : col[i]; });
+      got++;
+    }
+    return got;
+  }
+  /**
+   * Fetch what USM-1 needs for a series loaded from Open-Meteo (series.opts) and compute it.
+   * Returns {ok, why}. Cloud layers are required; snow depth and aerosol are best effort.
+   */
+  async function ensureUsm(s, fetchImpl) {
+    if (s.usm) return { ok: true };
+    const f = fetchImpl || fetch, o = s.opts;
+    if (!o) return { ok: false, why: 'USM-1 needs cloud cover by layer (low, mid, high), which a CSV upload does not have.' };
+    const opts = { ...o };
+    if (opts.mode === 'year' && !(opts.start && opts.end)) Object.assign(opts, yearWindow());
+    if (!opts.start && s.time.length && opts.mode !== 'current' && opts.mode !== 'forecast') {
+      const day = (t) => new Date(t + (s.utcOffset || 0) * 1000).toISOString().slice(0, 10);
+      opts.start = day(s.start); opts.end = day(s.end);
+    }
+    const sfx = opts.mode === 'previous' ? `_previous_day${Math.max(1, Math.min(7, opts.leadDays | 0))}` : '';
+    const get = async (url) => { try { const r = await f(url); const j = await r.json(); return r.ok && j && !j.error ? j : null; } catch (e) { return null; } };
+    const main = await get(usmUrl(opts, USM_VARS));
+    if (!main || !mergeHourly(s, main, { cloud_cover_low: 'cL', cloud_cover_mid: 'cM', cloud_cover_high: 'cH' }, sfx)) {
+      return { ok: false, why: 'Open-Meteo did not return cloud cover by layer for this weather source.' };
+    }
+    mergeHourly(s, main, { surface_pressure: 'pres', relative_humidity_2m: 'rh' }, sfx);
+    if (mergeHourly(s, main, { precipitation: 'precip' }, sfx)) { s.precipFromCode = false; s.precipMeasured = true; }
+    const snow = await get(usmUrl(opts, USM_SNOW)); if (snow) mergeHourly(s, snow, { snow_depth: 'snowDepth' }, sfx);
+    // CAMS aerosol has no "previous runs" archive: those runs use the analysis for the same hours
+    const aod = await get(usmUrl({ ...opts, mode: opts.mode === 'previous' ? 'historical' : opts.mode }, ['aerosol_optical_depth'], AOD_HOST));
+    if (aod) mergeHourly(s, aod, { aerosol_optical_depth: 'aod' });
+    computeUsm(s);
+    return s.usm ? { ok: true } : { ok: false, why: 'No usable USM-1 inputs for these hours.' };
   }
 
   function lerpAt(times, arr, t) {
@@ -138,7 +252,15 @@
     const dhi = ghi * kd, bh = ghi - dhi;
     const dni = sun.alt > 0.02 ? bh / Math.sin(sun.alt) : 0;
     const i = nearestIndex(s.time, t);
+    let usm = null;
+    if (s.usm) {
+      const ukt = lerpAt(s.mid, s.usm.kt, t), ukd = Math.max(0, Math.min(1, lerpAt(s.mid, s.usm.kd, t)));
+      const ug = Math.max(0, ukt * Eh), ud = ug * ukd;
+      usm = { ghi: ug, dhi: ud, dni: sun.alt > 0.02 ? (ug - ud) / Math.sin(sun.alt) : 0, albedo: lerpAt(s.mid, s.usm.albedo, t) };
+    }
+    const layers = s.cL && s.cM && s.cH ? [s.cL, s.cM, s.cH].map(a => lerpAt(s.time, a.map(v => v == null ? 0 : v), t)) : null;
     return {
+      usm, layers,
       t, sun, N: Math.max(0, Math.min(1, lerpAt(s.time, s.cloud, t) / 100)),
       cloudPct: lerpAt(s.time, s.cloud, t), temp: lerpAt(s.time, s.temp, t), wind: Math.max(0, lerpAt(s.time, s.wind, t)),
       windDir: lerpAngleAt(s.time, s.windDir, t), precip: Math.max(0, lerpAt(s.time, s.precip, t)), snow: Math.max(0, lerpAt(s.time, s.snow, t)),
@@ -260,6 +382,7 @@
     const series = parseOpenMeteo(data, opts.mode === 'era5' ? { ...opts, mode: 'historical' } : opts);
     if (!series.time.length) return { series: null, why: 'no cached hours for these dates' };
     series.cachedAt = json.arien_cached_at; series.fromCache = true;
+    series.opts = { mode: opts.mode, lat: opts.lat, lon: opts.lon, start: opts.start, end: opts.end, leadDays: opts.leadDays, apiKey: opts.apiKey };
     return { series, why: '' };
   }
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -287,6 +410,7 @@
     }
     if (res && res.ok && json && !json.error) {
       const s = parseOpenMeteo(json, opts);
+      s.opts = { mode: opts.mode, lat: opts.lat, lon: opts.lon, start: opts.start, end: opts.end, leadDays: opts.leadDays, apiKey: opts.apiKey };
       if (!s.time.length) throw new Error('No hourly data for that period. Previous-run forecasts start in January 2024; historical forecasts in 2022.');
       s.url = url; return s;
     }
@@ -309,7 +433,7 @@
     return (j.results || []).map(r => ({ name: r.name, admin: [r.admin1, r.country].filter(Boolean).join(', '), lat: r.latitude, lon: r.longitude }));
   }
 
-  const api = { MODES, BASE_VARS, CACHE_FILES, yearWindow, buildUrl, parseOpenMeteo, finalise, sample, lerpAt, parseCsv, describe, fetchSeries, fromCache, sliceHourly, geocode, WMO };
+  const api = { MODES, BASE_VARS, USM_VARS, AOD_DEFAULT, computeUsm, ensureUsm, usmUrl, CACHE_FILES, yearWindow, buildUrl, parseOpenMeteo, finalise, sample, lerpAt, parseCsv, describe, fetchSeries, fromCache, sliceHourly, geocode, WMO };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.ArienWeather = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -179,7 +179,7 @@ Edit files in `src/`, run `build.py`, commit both `src/` and `index.html`.
 
 ## Physics: what is implemented and what needs the PV Science project
 
-All in `src/physics.js`, unit-tested in `test/physics.test.js` (146 checks, including sun position against NOAA values, the weather cache, the panel library, geocoding, saved sites, the finance model and the line traces).
+All in `src/physics.js`, unit-tested in `test/physics.test.js` (276 checks, including sun position against NOAA values, the weather cache, the panel library, geocoding, saved sites, the finance model and the line traces).
 
 | Part | Implementation | Status |
 |---|---|---|
@@ -193,11 +193,31 @@ All in `src/physics.js`, unit-tested in `test/physics.test.js` (146 checks, incl
 | Thermal | Bálint, Fodor, Magyar (2019) ODE, solved exactly per step; h = 5.7 + 3.8·v; heat capacity 9,600 J/m²K; efficiency −0.35 %/°C default | h(v) and heat capacity are assumptions |
 | Shading | Beam only; line trace per cell (or 2×2 per cell) to the sun against other panels, placed objects and drawn buildings (canopy transparency, multiplied through several canopies) and the 3D-tile skyline; losses charged per cause | No bypass-diode or mismatch model; diffuse not shaded; multiplying canopy transparencies is our rule (the thesis treats canopies as solid) |
 | Seasonal rule | Summer (Jun–Aug) → RW-GHI, spring (Mar–May) → HDKR, autumn/winter → K–N; flipped for the southern hemisphere | From the company brief |
+| **USM-1** (experimental) | Unified Sky Model, Premawardhana (Nov 2026), Section 4 and Table 1 (nine global coefficients). See below | Not part of the seasonal rule; not validated on ground data |
+
+### USM-1 (experimental)
+
+Pick it under **Models** as the live model or in the comparison; it is labelled *experimental* everywhere, including reports.
+
+- **Inputs** (fetched only while USM-1 is in use, in requests of their own so they can never break the main weather load):
+  - Open-Meteo: cloud cover low, mid and high, precipitation, surface pressure and 2 m relative humidity (one request), snow depth (one request);
+  - CAMS aerosol optical depth at 550 nm from Open-Meteo's air-quality API (one request).
+  - The hourly weather cache (`tools/fetch_weather.py`) adds the same columns to `forecast.json`, `historical.json` and `year.json`, so those load without extra calls. `previous.json` does not carry them.
+  - Fallbacks, listed under the model list when used: pressure from the site's elevation, humidity 75%, no snow, aerosol 0.1. A CSV upload has no cloud layers, so USM-1 is unavailable there.
+- **Per hour** (`physics.usm1Hour`, hour ending at each Open-Meteo time stamp):
+  - instantaneous inputs averaged over the start and end of the hour; precipitation is the hour's total;
+  - six sub-steps; NOAA/Meeus sun position and earth–sun distance, E0n = 1361.1/r²; Kasten–Young air mass;
+  - precipitable water from temperature and humidity (Gueymard 1994), ozone from van Heuklon (1979), aerosol to 380 and 500 nm with Ångström 1.3;
+  - Bird–Hulstrom clear sky (eqs. 6–13), three cloud layers with precipitation thickening (eqs. 14–16), snow multiple reflection (eq. 17), layer beam (eq. 18);
+  - coefficients from Table 1: k_L 0.534, k_M 0.668, k_H 0.154, a 0.409, a_P 2.35, P_0 0.70 mm/h, α_s 0.71, κ 1.39, exponent on c_H 2.
+- **In the twin:** the hour means of global and diffuse are turned into instants like the API radiation (clearness and diffuse fraction at the half hour), then go onto the panels with HDKR and the hour's ground albedo (0.2, rising to 0.71 with 5 cm of snow). The beam part is what cell shading blocks.
+- **Checked against** pvlib 0.16.1 (the paper's own verification library) and a second implementation written from the paper in Python (`tools/usm1_reference.py`, fixtures in `test/fixtures/usm1_reference.json`): cos zenith within 1e-4 of SPA, Bird within 5e-5 (the paper's aerosol coefficient 0.2758 against pvlib's 0.27583), eight test hours (sunrise, rain, snow, dust at altitude, southern hemisphere, night) within 0.4%.
+- **Choices the paper leaves open** (for PV Science): sub-steps at the midpoints of six 10-minute slices; geometric zenith without refraction; precipitable water floored at 0.1 cm as in pvlib; van Heuklon's longitude term coded as in Wilson's implementation.
 
 ## Layout
 
 ```
-src/physics.js     solar geometry, 5 models, thermal, ray casting, metrics (no DOM)
+src/physics.js     solar geometry, 5 models + USM-1 (experimental), thermal, ray casting, metrics (no DOM)
 src/weather.js     Open-Meteo URLs and parsing, weather cache, CSV import, interpolation
 src/panels.js      panel library from datasheets
 src/places.js      place, address and postcode search; automatic names; saved sites (this browser)
@@ -216,6 +236,7 @@ test/account.test.js   node test/account.test.js
 test/account_check.py  the twin inside a copy of the web app's /twin page (handler as published 10 Nov 2026)
 test/run_browser.py    headless Chrome check with mocked CDN, tiles and weather
 test/models_check.py   renders every object at each level of detail
+test/usm1_check.py       USM-1: listed as experimental, inputs on demand, live power, period run, yield
 test/roof_snap_check.py  arrays dropped on gable, flat and ground surfaces; snap toggle and button
 test/buildings_check.py  object groups, drawing buildings in 3D and on the map, floors and roof, save and reopen
 tools/fetch_weather.py fills the weather-data branch (run by the workflow)

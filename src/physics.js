@@ -187,6 +187,18 @@
     }
   };
   const MODEL_KEYS = ['kasten', 'balint', 'rwghi', 'karamov', 'hdkr'];
+  // USM-1 (experimental): hour means from weather.js (series.usm), disaggregated like the API radiation, then HDKR
+  // with the snow-dependent ground albedo, as in the paper (Section 4.7).
+  MODELS.usm1 = {
+    label: 'USM-1 Unified Sky Model', paneLabel: 'USM\u20111', short: 'USM-1', input: 'cloud layers, rain, snow, humidity, pressure, aerosol', experimental: true,
+    horizontal(ctx) {
+      const u = ctx.usm; if (!u) return { ghi: 0, bh: 0, dh: 0, missing: true };
+      const g = Math.max(0, u.ghi), d = Math.max(0, Math.min(u.dhi, g));
+      return { ghi: g, bh: g - d, dh: d };
+    },
+    transpose(h, ctx, n, tilt, P) { return transposeHDKR(h, ctx.sun, ctx.sunVec, n, tilt, P.common.minAltDeg * D2R, ctx.usm ? ctx.usm.albedo : P.common.albedo); }
+  };
+  const EXPERIMENTAL_KEYS = ['usm1'];
 
   /** Seasonal selection rule (thesis): summer → RW-GHI, autumn/winter → K–N, spring → HDKR */
   function seasonalModel(tMs, latDeg) {
@@ -195,6 +207,115 @@
     if (m >= 5 && m <= 7) return 'rwghi';
     if (m >= 2 && m <= 4) return 'hdkr';
     return 'karamov';
+  }
+
+
+  // ---------- USM-1: Unified Sky Model, version 1 (experimental) ----------
+  // Premawardhana (Nov 2026), "Calibration-Free Estimation of Surface Solar Irradiance from Routine Weather
+  // Variables", Section 4 and Table 1. One coefficient set for every site; hour means for the hour ending at t.
+  // Implementation choices the paper leaves open (flagged for PV Science):
+  //  - the six sub-steps are the midpoints of six 10-minute slices of the hour;
+  //  - solar position: NOAA/Meeus series (about 0.01°), geometric zenith, no refraction;
+  //  - precipitable water is floored at 0.1 cm, as in pvlib (which the paper verified against);
+  //  - ozone (van Heuklon 1979) uses Wilson's coding of the published constants.
+  const USM1 = { kL: 0.534, kM: 0.668, kH: 0.154, a: 0.409, aP: 2.35, P0: 0.70, alphaS: 0.71, kappa: 1.39, eH: 2, Gsc: 1361.1, angstrom: 1.3 };
+
+  /** Sun for USM-1 (NOAA / Meeus): cos zenith (geometric) and earth–sun distance in AU */
+  function sunNOAA(tMs, latDeg, lonDeg) {
+    const jd = tMs / 86400000 + 2440587.5, T = (jd - 2451545) / 36525;
+    const L0 = ((280.46646 + T * (36000.76983 + T * 0.0003032)) % 360 + 360) % 360;
+    const M = 357.52911 + T * (35999.05029 - 0.0001537 * T), Mr = M * D2R;
+    const e = 0.016708634 - T * (0.000042037 + 0.0000001267 * T);
+    const C = Math.sin(Mr) * (1.914602 - T * (0.004817 + 0.000014 * T)) + Math.sin(2 * Mr) * (0.019993 - 0.000101 * T) + Math.sin(3 * Mr) * 0.000289;
+    const trueLong = L0 + C, nu = (M + C) * D2R;
+    const r = 1.000001018 * (1 - e * e) / (1 + e * Math.cos(nu));
+    const om = (125.04 - 1934.136 * T) * D2R;
+    const lam = (trueLong - 0.00569 - 0.00478 * Math.sin(om)) * D2R;
+    const eps0 = 23 + (26 + (21.448 - T * (46.815 + T * (0.00059 - T * 0.001813))) / 60) / 60;
+    const eps = (eps0 + 0.00256 * Math.cos(om)) * D2R;
+    const decl = Math.asin(Math.sin(eps) * Math.sin(lam));
+    const y = Math.tan(eps / 2) ** 2, L0r = L0 * D2R;
+    const eot = 4 * R2D * (y * Math.sin(2 * L0r) - 2 * e * Math.sin(Mr) + 4 * e * y * Math.sin(Mr) * Math.cos(2 * L0r) - 0.5 * y * y * Math.sin(4 * L0r) - 1.25 * e * e * Math.sin(2 * Mr));
+    const minutes = ((tMs / 60000) % 1440 + 1440) % 1440;
+    const tst = minutes + eot + 4 * lonDeg, ha = (tst / 4 - 180) * D2R, phi = latDeg * D2R;
+    const cz = Math.sin(phi) * Math.sin(decl) + Math.cos(phi) * Math.cos(decl) * Math.cos(ha);
+    return { cosZ: Math.max(-1, Math.min(1, cz)), r, decl };
+  }
+  /** Relative optical air mass, Kasten & Young (1989); zenith in degrees */
+  function airmassKY(zDeg) { return 1 / (Math.cos(zDeg * D2R) + 0.50572 * Math.pow(96.07995 - zDeg, -1.6364)); }
+  /** Precipitable water (cm) from 2 m temperature (°C) and relative humidity (%), Gueymard (1994); eqs. 4–5 */
+  function precipitableWater(T, RH) {
+    const TK = T + 273.15, th = TK / 273.15;
+    const Hv = 0.4976 + 1.5265 * th + Math.exp(13.6897 * th - 14.9188 * th ** 3);
+    const rhov = 216.7 * RH / (100 * TK) * Math.exp(22.330 - 49.140 * (100 / TK) - 10.922 * (100 / TK) ** 2 - 0.39015 * TK / 100);
+    return Math.max(0.1, 0.1 * Hv * rhov);
+  }
+  /** Total ozone (atm-cm), van Heuklon (1979) latitude–season formula */
+  function ozoneVanHeuklon(tMs, latDeg, lonDeg) {
+    const E = dayOfYearUTC(tMs);
+    const s = latDeg >= 0 ? { A: 150, B: 1.28, C: 40, F: -30, H: 3, I: lonDeg > 0 ? 20 : 0 } : { A: 100, B: 1.5, C: 30, F: 152.625, H: 2, I: -75 };
+    const du = 235 + (s.A + s.C * Math.sin(0.9865 * (E + s.F) * D2R) + 20 * Math.sin(s.H * (lonDeg + s.I) * D2R)) * Math.sin(s.B * latDeg * D2R) ** 2;
+    return du / 1000;
+  }
+  /**
+   * Bird–Hulstrom clear sky (eqs. 6–13) for one instant. E0n: extraterrestrial normal irradiance (W/m²),
+   * cosZ > 0, p (hPa), w (cm), uo (atm-cm), tau380/tau500. Returns {G, Bn, Bh} (W/m²).
+   */
+  function birdClearSky(E0n, cosZ, p, w, uo, tau380, tau500) {
+    const z = Math.acos(cosZ) * R2D, m = airmassKY(z), mp = m * p / 1013.25;
+    const TR = Math.exp(-0.0903 * mp ** 0.84 * (1 + mp - mp ** 1.01));
+    const xo = uo * m, To = 1 - 0.1611 * xo * (1 + 139.48 * xo) ** -0.3034 - 0.002715 * xo / (1 + 0.044 * xo + 0.0003 * xo * xo);
+    const Tg = Math.exp(-0.0127 * mp ** 0.26);
+    const xw = w * m, Tw = 1 - 2.4959 * xw / ((1 + 79.034 * xw) ** 0.6828 + 6.385 * xw);
+    const ta = 0.2758 * tau380 + 0.35 * tau500;
+    const Ta = Math.exp(-(ta ** 0.873) * (1 + ta - ta ** 0.7088) * m ** 0.9108);
+    const Taa = 1 - 0.1 * (1 - m + m ** 1.06) * (1 - Ta), rhoS = 0.0685 + 0.15 * (1 - Ta / Taa);
+    const Bn = 0.9662 * E0n * TR * To * Tg * Tw * Ta;
+    const Ias = 0.79 * E0n * cosZ * To * Tg * Tw * Taa * (0.5 * (1 - TR) + 0.85 * (1 - Ta / Taa)) / (1 - m + m ** 1.02);
+    const G = (Bn * cosZ + Ias) / (1 - 0.2 * rhoS);
+    return { G, Bn, Bh: Bn * cosZ };
+  }
+  /**
+   * USM-1 for the hour ending at tEnd (ms UTC). Inputs (hour means of instantaneous values):
+   *   T (°C), RH (%), p (hPa), cL, cM, cH (0–1), cT (0–1, optional), P (mm/h, the hour's precipitation),
+   *   ds (snow depth, m), aod (550 nm). Returns hour means {G, Bh, D, Bn} (W/m²) and the parts:
+   *   {Gcs, Bcs, kc, Fs, rhoG, C, Tbar, mu, fsun, E0h, w, uo}. Coefficients: USM1 (Table 1) unless `k` is given.
+   */
+  function usm1Hour(inp, lat, lon, k = USM1) {
+    const steps = 6, tEnd = inp.tEnd;
+    const w = precipitableWater(inp.T, inp.RH), p = inp.p;
+    const tau550 = Math.max(0, inp.aod), tau380 = tau550 * (380 / 550) ** -k.angstrom, tau500 = tau550 * (500 / 550) ** -k.angstrom;
+    let E0h = 0, Gcs = 0, Bcs = 0, sunlit = 0, muSum = 0, uo = 0;
+    for (let i = 0; i < steps; i++) {
+      const t = tEnd - 3600000 + (i + 0.5) * 3600000 / steps;
+      const s = sunNOAA(t, lat, lon), E0n = k.Gsc / (s.r * s.r);
+      if (i === 0) uo = ozoneVanHeuklon(t, lat, lon);
+      if (s.cosZ <= 0) continue;
+      E0h += E0n * s.cosZ; sunlit++; muSum += s.cosZ;
+      const cs = birdClearSky(E0n, s.cosZ, p, w, uo, tau380, tau500);
+      Gcs += cs.G; Bcs += cs.Bh;
+    }
+    E0h /= steps; Gcs /= steps; Bcs /= steps;
+    const fsun = sunlit / steps, mu = sunlit ? muSum / sunlit : 0;
+    const clamp01 = (v) => Math.max(0, Math.min(1, Number(v) || 0));
+    const c = { L: clamp01(inp.cL), M: clamp01(inp.cM), H: clamp01(inp.cH) };
+    const P = Math.max(0, Number(inp.P) || 0), fP = 1 + k.aP * P / (P + k.P0);
+    const tau = { L: k.kL * fP, M: k.kM * fP, H: k.kH * c.H ** k.eH };
+    const C = inp.cT != null && isFinite(inp.cT) ? Math.max(clamp01(inp.cT), c.L, c.M, c.H) : 1 - (1 - c.L) * (1 - c.M) * (1 - c.H);
+    let Tbar = 1, beam = 1;
+    if (C > 1e-9 && mu > 0) {
+      for (const i of ['L', 'M', 'H']) {
+        const Ti = (k.a + mu) / (k.a + mu + tau[i]), bi = Math.exp(-k.kappa * tau[i] / mu);
+        Tbar *= 1 - c[i] / C * (1 - Ti); beam *= 1 - c[i] / C * (1 - bi);
+      }
+    }
+    const kc = 1 - C + C * Tbar;
+    const rhoG = 0.2 + (k.alphaS - 0.2) * Math.min(1, Math.max(0, Number(inp.ds) || 0) / 0.05);
+    const rhoSky = 0.07 + 0.93 * C * (1 - Tbar), Fs = (1 - 0.2 * rhoSky) / (1 - rhoG * rhoSky);
+    const G = Gcs * kc * Fs;
+    const Bh = Math.min(G, Bcs * (1 - C + C * beam)), D = Math.max(0, G - Bh);
+    const Bn = fsun > 0 && mu > 0 ? Bh / (fsun * mu) : 0;
+    return { G, Bh, D, Bn, Gcs, Bcs, kc, Fs, rhoG, C, Tbar, mu, fsun, E0h, w, uo };
   }
 
   // ---------- Thermal model (Bálint, Fodor, Magyar 2019, eq. 9) ----------
@@ -555,7 +676,7 @@
         p = p.map(([x, y]) => [x - cx, y - cy]);
       }
     }
-    o.poly = p.map(([x, y]) => [Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000]);
+    o.poly = p.map(([x, y]) => [Math.round(x * 1000) / 1000 || 0, Math.round(y * 1000) / 1000 || 0]); // || 0: no −0, which a save turns into 0
     const sh = buildingShape(o);
     o.dims = { length: x1 - x0, width: y1 - y0, height: sh.top };
     o.porosity = 0;
@@ -838,6 +959,7 @@
   const api = {
     D2R, R2D, I0, dayOfYearUTC, E0, declination, equationOfTime, solarPosition, airPathZ, sunVectorENU,
     meanExtraterrestrialHorizontal, panelNormal, cosIncidence, DEFAULT_PARAMS, MODELS, MODEL_KEYS, seasonalModel,
+    USM1, EXPERIMENTAL_KEYS, sunNOAA, airmassKY, precipitableWater, ozoneVanHeuklon, birdClearSky, usm1Hour,
     kastenHorizontal, transposeHDKR, transposeIsotropic, transposeBalint,
     convectiveCoeff, efficiency, thermalStep, thermalEquilibrium,
     rayBox, raySphere, rayEllipsoid, rayCylinder, rayCone, rayRect, OBJECT_TYPES, objectTransmission, objectTrace,

@@ -74,8 +74,90 @@ near(P.airPathZ(Math.PI / 2), 1, 1e-9, 'z at zenith');
     const fg = P.buildArrayGeometry(fa), cz = fg.panels.map(p => p.c[2]), cy = fg.panels.map(p => p.c[1]);
     near((cz[2] - cz[0]) / (cy[2] - cy[0]), Math.tan(30 / R2D), 1e-9, 'flush rows lie on the roof slope');
   }
+  ok(P.buildingFromOutline([[0, 0], [10, 0], [10, 6], [5.0004, 6], [5.0004, 3], [0, 3]]).poly.flat().every(v => !Object.is(v, -0)), 'footprint has no −0 after rounding');
   ok(P.buildingSpec({ floors: 500, roof: 'dome' }).floors === 60 && P.buildingSpec({ roof: 'dome' }).roof === 'gable', 'building settings are clamped');
 }
+
+// --- USM-1 (experimental): against pvlib 0.16.1 and an independent Python reading of the paper (tools/usm1_reference.py)
+{
+  const REF = require('./fixtures/usm1_reference.json');
+  for (const c of REF.instants) {
+    const t = Date.parse(c.t), s = P.sunNOAA(t, c.lat, c.lon);
+    near(s.cosZ, c.cosZ, 1e-4, `USM-1 sun: cos zenith vs SPA at ${c.t}`);
+    near(s.r, c.r, 2e-4, `USM-1 sun: earth–sun distance at ${c.t}`);
+    near(P.airmassKY(Math.acos(c.cosZ) * R2D), c.am, 1e-9 * c.am, `Kasten–Young air mass at ${c.t}`);
+    const b = c.bird, j = P.birdClearSky(b.E0n, c.cosZ, b.p, b.w, b.uo, b.aod380, b.aod500);
+    // the paper's broadband aerosol coefficient is 0.2758 (pvlib: 0.27583), worth up to 3e-5 at low sun
+    near(j.G / b.G, 1, 5e-5, `Bird global vs pvlib at ${c.t}`); near(j.Bn / b.Bn, 1, 5e-5, `Bird beam vs pvlib at ${c.t}`);
+  }
+  for (const c of REF.pw) near(P.precipitableWater(c.T, c.RH), c.w, 1e-9, `precipitable water ${c.T} °C ${c.RH}%`);
+  for (const c of REF.cases) {
+    const i = c.input, e = c.expect, r = P.usm1Hour({ ...i, tEnd: Date.parse(i.tEnd) }, i.lat, i.lon);
+    const tol = (v) => Math.max(0.5, 0.004 * Math.abs(v)); // solar position: NOAA here, SPA in the reference
+    near(r.G, e.G, tol(e.G), `USM-1 G: ${i.name}`); near(r.Bh, e.Bh, tol(e.Bh), `USM-1 beam: ${i.name}`); near(r.D, e.D, tol(e.D), `USM-1 diffuse: ${i.name}`);
+    near(r.kc, e.kc, 0.002, `USM-1 clear-sky index: ${i.name}`); near(r.Fs, e.Fs, 1e-3, `USM-1 snow factor: ${i.name}`);
+    near(r.uo, e.uo, 1e-9, `van Heuklon ozone: ${i.name}`);
+  }
+  // behaviour from the paper's text
+  const base = { tEnd: Date.UTC(2024, 5, 21, 12), T: 15, RH: 70, p: 1013, cL: 1, cM: 0, cH: 0, P: 0, ds: 0, aod: 0.1 };
+  const U = (o) => P.usm1Hour({ ...base, ...o }, 52, -1);
+  ok(U({ P: 0 }).kc > U({ P: 0.5 }).kc && U({ P: 0.5 }).kc > U({ P: 3 }).kc, 'rain thickens cloud: kc falls with precipitation');
+  ok(U({ cL: 0, cH: 1 }).kc > U({}).kc && U({ cL: 0, cH: 1 }).kc > U({ cL: 0, cM: 1 }).kc, 'overcast high cloud transmits more than low or mid');
+  ok(U({ cL: 0 }).kc === 1 && U({ cL: 0 }).G === U({ cL: 0 }).Gcs, 'no cloud: G is the clear sky');
+  ok(U({ ds: 0.1 }).G > U({ ds: 0 }).G && U({ cL: 0, ds: 0.1 }).G / U({ cL: 0 }).G < 1.06, 'snow raises irradiance, a little under clear sky');
+  ok(U({ cL: 0, cT: 0.6 }).C === 0.6, 'total cover is used when it is larger than every layer');
+  ok(U({}).Bh <= U({}).G && U({}).D >= 0, 'beam never exceeds global');
+  near(P.ozoneVanHeuklon(Date.UTC(2024, 0, 1), 0, 0), 0.235, 1e-12, 'ozone at the equator = 235 DU');
+}
+
+// --- USM-1 in the weather layer: inputs fetched on demand, hour means → instants
+globalThis.__usmChecks = (async () => {
+  const W = require('../src/weather.js');
+  const t0 = Date.UTC(2024, 5, 20, 0) / 1000, hrs = Array.from({ length: 48 }, (_, h) => t0 + h * 3600);
+  const base = { latitude: 52, longitude: -1, elevation: 90, utc_offset_seconds: 0, hourly: { time: hrs,
+    temperature_2m: hrs.map(() => 18), cloud_cover: hrs.map(() => 0), wind_speed_10m: hrs.map(() => 2), wind_direction_10m: hrs.map(() => 200),
+    weather_code: hrs.map(() => 0), shortwave_radiation: hrs.map(() => 0), diffuse_radiation: hrs.map(() => 0) } };
+  const s = W.parseOpenMeteo(JSON.parse(JSON.stringify(base)), { mode: 'historical' });
+  ok(s.usm === null, 'no cloud layers: USM-1 not computed yet');
+  const calls = [];
+  const fake = async (url) => {
+    calls.push(url); const u = new URL(url), vars = u.searchParams.get('hourly').split(','), hourly = { time: hrs };
+    for (const v of vars) hourly[v] = hrs.map((_, h) => v.startsWith('cloud_cover_low') ? (h >= 24 ? 100 : 0) : v.startsWith('cloud_cover') ? 0
+      : v.startsWith('precipitation') ? 0 : v.startsWith('surface_pressure') ? 1003 : v.startsWith('relative_humidity') ? 70 : v.startsWith('snow_depth') ? 0 : 0.08);
+    return { ok: true, json: async () => ({ latitude: 52, longitude: -1, hourly }) };
+  };
+  s.opts = { mode: 'historical', lat: 52, lon: -1, start: '2024-06-20', end: '2024-06-21' };
+  const r = await W.ensureUsm(s, fake);
+  ok(r.ok && s.usm && s.usm.ghi.length === 48, 'inputs fetched: USM-1 hour means for every hour');
+  ok(calls.length === 3 && calls.some(u => u.includes('air-quality-api')) && calls.some(u => u.includes('snow_depth')), 'three requests: weather extras, snow, CAMS aerosol');
+  ok(s.usmNotes.length === 0, 'no fallbacks needed: ' + s.usmNotes.join('; '));
+  const noon1 = W.sample(s, Date.UTC(2024, 5, 20, 12), 52, -1), noon2 = W.sample(s, Date.UTC(2024, 5, 21, 12), 52, -1);
+  ok(noon1.usm.ghi > 750 && noon1.usm.ghi < 950, 'clear noon at 52°N: ' + noon1.usm.ghi.toFixed(0) + ' W/m²');
+  ok(noon2.usm.ghi < noon1.usm.ghi * 0.8 && noon2.usm.dhi / noon2.usm.ghi > 3 * noon1.usm.dhi / noon1.usm.ghi, 'overcast low cloud the next day: lower, far more diffuse');
+  { const mu = P.usm1Hour({ tEnd: Date.UTC(2024, 5, 21, 12), T: 18, RH: 70, p: 1003, cL: 1, cM: 0, cH: 0, P: 0, ds: 0, aod: 0.08 }, 52, -1).mu;
+    near(s.usm.kc[36], (0.409 + mu) / (0.409 + mu + 0.534), 1e-9, 'overcast low layer, no rain: kc = (a + μ)/(a + μ + k_L), eq. 15'); }
+  const hourly = P.usm1Hour({ tEnd: Date.UTC(2024, 5, 20, 13), T: 18, RH: 70, p: 1003, cL: 0, cM: 0, cH: 0, cT: 0, P: 0, ds: 0, aod: 0.08 }, 52, -1);
+  near(s.usm.ghi[13], hourly.G, 1e-9, 'series hour = usm1Hour for the same inputs');
+  // instants rebuilt from the hour mean average back to it
+  let m = 0; for (let k = 0; k < 60; k++) m += W.sample(s, Date.UTC(2024, 5, 20, 12) + (k + 0.5) * 60000, 52, -1).usm.ghi; m /= 60;
+  near(m, s.usm.ghi[13], s.usm.ghi[13] * 0.01, 'instants average back to the hour mean');
+  ok(noon1.usm.albedo === 0.2, 'ground albedo 0.2 without snow');
+  const ctx = { sun: noon1.sun, sunVec: P.sunVectorENU(noon1.sun.alt, noon1.sun.az), usm: noon1.usm };
+  const hz = P.MODELS.usm1.horizontal(ctx, P.DEFAULT_PARAMS), tp = P.MODELS.usm1.transpose(hz, ctx, P.panelNormal(35 * Math.PI / 180, Math.PI), 35 * Math.PI / 180, P.DEFAULT_PARAMS);
+  ok(tp.beam + tp.diffuse + tp.ground > hz.ghi, 'south-facing 35° panel gets more than the horizontal at noon');
+  ok(P.MODELS.usm1.horizontal({ sun: noon1.sun }, P.DEFAULT_PARAMS).missing === true, 'no USM-1 inputs: marked missing, not a silent zero');
+  const csv = W.parseCsv('time,temperature,cloud_cover,ghi\n2024-06-20T12:00Z,18,20,600\n2024-06-20T13:00Z,18,20,600', 52, -1).series;
+  ok(!(await W.ensureUsm(csv, fake)).ok, 'CSV without layers: USM-1 unavailable');
+  const bad = async () => ({ ok: false, json: async () => ({ error: true, reason: 'Cannot initialize WeatherVariable' }) });
+  const s2 = W.parseOpenMeteo(JSON.parse(JSON.stringify(base)), { mode: 'previous', leadDays: 2 }); s2.opts = { mode: 'previous', lat: 52, lon: -1, start: '2024-06-20', end: '2024-06-21', leadDays: 2 };
+  const r2 = await W.ensureUsm(s2, bad);
+  ok(!r2.ok && /cloud cover by layer/.test(r2.why), 'endpoint without layers: a clear reason, the main series untouched');
+  // a cached file that already carries the extras needs no extra request
+  const withX = JSON.parse(JSON.stringify(base)); ['cloud_cover_low', 'cloud_cover_mid', 'cloud_cover_high'].forEach(v => { withX.hourly[v] = hrs.map(() => 0); });
+  ok(W.parseOpenMeteo(withX, { mode: 'forecast' }).usm !== null, 'layers in the file: USM-1 computed on load');
+  ok(!W.buildUrl({ mode: 'forecast', lat: 52, lon: -1 }).includes('cloud_cover_low'), 'the main weather request is unchanged');
+  console.log(`USM-1 weather checks done`);
+})().catch(e => { console.log('FAIL: USM-1 weather checks threw ' + e.stack); process.exitCode = 1; });
 
 // --- Kasten clear sky, α = 60° ---
 const sun60 = { alt: 60 / R2D, az: Math.PI, In: 1367 };
@@ -384,6 +466,7 @@ ok(W.describe(61, 90) === 'Light rain' && W.describe(1, 10) === 'Clear sky', 'we
     ok(w0 > 0 && w1 > 0, 'both obstacles take part of the beam: ' + (w0 / at.total).toFixed(2) + ' / ' + (w1 / at.total).toFixed(2));
     near(at.total, trA[0].trans.reduce((s, t) => s + (1 - t), 0) * Math.cos(Math.PI / 2 - sunS.alt) / 16, 1e-6, 'attribution total = lost cell share × cos(incidence) × area');
   }
+  await globalThis.__usmChecks;
   console.log(`${passes} passed, ${fails} failed`);
   process.exit(fails ? 1 : 0);
   })();

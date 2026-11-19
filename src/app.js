@@ -15,11 +15,12 @@
   const breathe = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => { c.port1.close(); r(); }; c.port2.postMessage(0); });
 
   const DEFAULT_SITE = { name: 'Buckingham, UK', lat: 51.99564350977578, lon: -0.9906258867252853 };
-  const LIVE_KEYS = ['rwghi', 'hdkr', 'karamov', 'kasten', 'balint', 'seasonal'];
-  const MODEL_COLORS = { rwghi: '#f3b23c', hdkr: '#6cc3e8', karamov: '#a594f9', kasten: '#e5675c', balint: '#69c38a', seasonal: '#eef2f5' };
-  const modelLabel = (k) => k === 'seasonal' ? 'Seasonal rule (thesis)' : PH.MODELS[k].label;
+  const LIVE_KEYS = ['rwghi', 'hdkr', 'karamov', 'kasten', 'balint', 'usm1', 'seasonal'];
+  const MODEL_COLORS = { rwghi: '#f3b23c', hdkr: '#6cc3e8', karamov: '#a594f9', kasten: '#e5675c', balint: '#69c38a', usm1: '#f28cc8', seasonal: '#eef2f5' };
+  const paneLabel = (k) => k === 'seasonal' ? 'Seasonal rule (thesis)' : PH.MODELS[k].paneLabel || PH.MODELS[k].label;
+  const modelLabel = (k) => (k === 'seasonal' ? 'Seasonal rule (thesis)' : PH.MODELS[k].label) + (PH.MODELS[k] && PH.MODELS[k].experimental ? ' (experimental)' : ''); // reports and dashboard
   const modelShort = (k) => k === 'seasonal' ? 'Seasonal' : PH.MODELS[k].short;
-  const MODEL_NOTE = { rwghi: 'API GHI', hdkr: 'API GHI + DHI', karamov: 'cloud cover', kasten: 'cloud cover', balint: 'cloud cover', seasonal: 'switches by season' };
+  const MODEL_NOTE = { rwghi: 'API GHI', hdkr: 'API GHI + DHI', karamov: 'cloud cover', kasten: 'cloud cover', balint: 'cloud cover', usm1: 'cloud layers, rain, snow, aerosol', seasonal: 'switches by season' };
   const STORE_SCENE = 'arien-twin-scene-v1', STORE_KEYS = 'arien-twin-keys-v1';
   const MAX_RENDER_CELLS = 24000;
 
@@ -870,11 +871,29 @@
     if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); removeSelected(); }
   }
 
+  // ------------------------------------------------------------------ USM-1 (experimental): its inputs load on demand
+  const usmPending = new WeakMap();
+  /** Make sure a weather series has USM-1's inputs; false (with a message) when it cannot */
+  async function ensureUsm(s, quiet = false) {
+    if (!s) return false; if (s.usm) return true;
+    if (!usmPending.has(s)) usmPending.set(s, WX.ensureUsm(s));
+    if (!quiet) setStatus('#model-usm-status', 'Loading USM-1 inputs (cloud layers, pressure, humidity, snow, aerosol)…');
+    const r = await usmPending.get(s);
+    if (!r.ok) { usmPending.delete(s); setStatus('#model-usm-status', 'USM-1: ' + r.why, 'err'); if (!quiet) toast('USM-1 is not available: ' + r.why, 'warn', 8000); return false; }
+    renderUsmStatus(); return true;
+  }
+  function renderUsmStatus() {
+    const s = state.wx.series; if (!s || !s.usm) return;
+    const notes = s.usmNotes || [];
+    setStatus('#model-usm-status', `USM-1 inputs loaded for ${s.time.length} hours.${notes.length ? ' Fallbacks: ' + notes.join('; ') + '.' : ''}`, notes.length ? 'warn' : 'ok');
+  }
+  const usmInUse = () => state.live === 'usm1' || !!state.compare.usm1;
+
   // ------------------------------------------------------------------ simulation
   function computePower(modelKey, w, sunVec, trans, Tstate, dtSec, arrs = state.arrays, gList = null) {
     const key = modelKey === 'seasonal' ? PH.seasonalModel(w.t, state.site.lat) : modelKey;
     const M = PH.MODELS[key];
-    const ctx = { sun: w.sun, sunVec, N: w.N, api: w.api };
+    const ctx = { sun: w.sun, sunVec, N: w.N, api: w.api, usm: w.usm };
     const h = M.horizontal(ctx, state.params);
     let totalW = 0, poaArea = 0, area = 0, tArea = 0;
     arrs.forEach((a, ai) => {
@@ -1063,7 +1082,9 @@
     const btn = $('#t-run'); btn.disabled = true;
     const step = 15 * 60000;
     const t0 = Math.ceil(s.start / step) * step, t1 = s.end;
-    const keys = LIVE_KEYS.filter(k => state.compare[k] || k === state.live);
+    let keys = LIVE_KEYS.filter(k => state.compare[k] || k === state.live);
+    if (keys.includes('usm1') && !(await ensureUsm(s, silent))) keys = keys.filter(k => k !== 'usm1');
+    if (!keys.length) keys = ['rwghi'];
     const out = { times: [], keys, kw: {}, poa: {}, tcell: {}, cloud: [], temp: [], ghi: [], sunAlt: [] };
     keys.forEach(k => { out.kw[k] = []; out.poa[k] = []; out.tcell[k] = []; });
     const Ts = {}; keys.forEach(k => { Ts[k] = {}; });
@@ -1136,6 +1157,7 @@
       }
       state.wx.series = series; state.site.elevation = series.elevation ?? state.site.elevation;
       resetSim(); state.run = null;
+      if (usmInUse()) await ensureUsm(series, auto); else setStatus('#model-usm-status', '');
       configureClock(mode === 'current' || mode === 'forecast');
       const hours = series.time.length;
       const warn = !series.hasRadiation ? ' No radiation columns: HDKR and Real-World GHI will read zero.' : '';
@@ -1434,6 +1456,7 @@ void main() {
       [state.wx.series && state.wx.series.precipFromCode ? 'Precipitation (from weather code)' : 'Precipitation', `${fmt(w.precip, 1)} mm/h`], ['Sun elevation', `${fmt(w.sun.alt * R2D, 1)}°`],
       ['GHI (weather API)', `${fmt(w.api.ghi, 0)} W/m²`]
     ];
+    if (w.usm) rows.push(['Cloud low / mid / high', w.layers ? w.layers.map(v => fmt(v, 0)).join(' / ') + ' %' : '–'], ['GHI (USM-1)', `${fmt(w.usm.ghi, 0)} W/m² · diffuse ${fmt(w.usm.dhi, 0)}`]);
     $('#overview').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
   }
   function measuredAligned(times) {
@@ -1795,11 +1818,16 @@ void main() {
   }
 
   function buildModelPane() {
-    $('#model-live').innerHTML = LIVE_KEYS.map(k => `<label><input type="radio" name="live" value="${k}" ${k === state.live ? 'checked' : ''}><span class="swatch" style="background:${MODEL_COLORS[k]}"></span>${modelLabel(k)}${(PH.MODELS[k] && PH.MODELS[k].placeholder) ? ' <span class="badge warn">check</span>' : ''}<small>${MODEL_NOTE[k]}</small></label>`).join('');
-    $('#model-compare').innerHTML = LIVE_KEYS.map(k => `<label><input type="checkbox" value="${k}" ${state.compare[k] ? 'checked' : ''}><span class="swatch" style="background:${MODEL_COLORS[k]}"></span>${modelLabel(k)}</label>`).join('');
-    $('#model-live').addEventListener('change', (e) => { state.live = e.target.value; state.sim.T = {}; saveSoon(); simulateNow(); if (state.run) { if (!state.run.keys.includes(state.live)) runPeriod(true); else renderDashboard(); } });
-    $('#model-compare').addEventListener('change', (e) => { state.compare[e.target.value] = e.target.checked; saveSoon(); });
-    $('#model-all').addEventListener('click', () => { ['rwghi', 'hdkr', 'karamov', 'kasten', 'balint'].forEach(k => { state.compare[k] = true; }); $$('#model-compare input').forEach(i => { if (i.value !== 'seasonal') i.checked = true; }); saveSoon(); runPeriod(); });
+    const badge = (k) => { const M = PH.MODELS[k]; return M && M.experimental ? ' <span class="badge exp">experimental</span>' : M && M.placeholder ? ' <span class="badge warn">check</span>' : ''; };
+    $('#model-live').innerHTML = LIVE_KEYS.map(k => `<label><input type="radio" name="live" value="${k}" ${k === state.live ? 'checked' : ''}><span class="swatch" style="background:${MODEL_COLORS[k]}"></span>${paneLabel(k)}${badge(k)}<small>${MODEL_NOTE[k]}</small></label>`).join('');
+    $('#model-compare').innerHTML = LIVE_KEYS.map(k => `<label><input type="checkbox" value="${k}" ${state.compare[k] ? 'checked' : ''}><span class="swatch" style="background:${MODEL_COLORS[k]}"></span>${paneLabel(k)}${badge(k)}</label>`).join('');
+    $('#model-live').addEventListener('change', async (e) => {
+      state.live = e.target.value; state.sim.T = {}; saveSoon();
+      if (state.live === 'usm1' && state.wx.series && !(await ensureUsm(state.wx.series))) return;
+      simulateNow(); if (state.run) { if (!state.run.keys.includes(state.live)) runPeriod(true); else renderDashboard(); }
+    });
+    $('#model-compare').addEventListener('change', (e) => { state.compare[e.target.value] = e.target.checked; saveSoon(); if (e.target.value === 'usm1' && e.target.checked && state.wx.series) ensureUsm(state.wx.series); });
+    $('#model-all').addEventListener('click', () => { ['rwghi', 'hdkr', 'karamov', 'kasten', 'balint', 'usm1'].forEach(k => { state.compare[k] = true; }); $$('#model-compare input').forEach(i => { if (i.value !== 'seasonal') i.checked = true; }); saveSoon(); runPeriod(); });
     buildParamGrid();
     $('#param-reset').addEventListener('click', () => { state.params = clone(PH.DEFAULT_PARAMS); state.thermalCa = 9600; buildParamGrid(); onParamChange(); });
   }
@@ -2176,7 +2204,11 @@ void main() {
   async function runYield(s, onProgress, opt = {}) {
     const arrs = opt.arrays || coarseArrays(), gs = arrs.map(a => PH.buildArrayGeometry(a)), hz = opt.arrays ? null : horizonFn();
     const objects = opt.objects || state.objects, quiet = !!opt.quiet;
-    const keys = opt.keys || [state.live, ...LIVE_KEYS.filter(k => state.compare[k] && k !== state.live)];
+    let keys = opt.keys || [state.live, ...LIVE_KEYS.filter(k => state.compare[k] && k !== state.live)];
+    if (keys.includes('usm1') && !(await ensureUsm(s, true))) {
+      keys = keys.filter(k => k !== 'usm1'); if (!keys.length) keys = ['rwghi'];
+      if (!quiet) toast('USM-1 inputs for the last 12 months could not be loaded, so the yield uses ' + modelShort(keys[0]) + '.', 'warn', 7000);
+    }
     const month = {}, total = {}, unshaded = {}, TsS = {}, TsU = {};
     keys.forEach(k => { month[k] = new Array(12).fill(0); total[k] = 0; unshaded[k] = 0; TsS[k] = {}; TsU[k] = {}; });
     const cache = new Map(), nP = gs.reduce((t, g) => t + g.panels.length, 0);
@@ -2888,7 +2920,7 @@ void main() {
     window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (v === 'design' || v === 'dashboard') whenBooted(() => setView(v)); });
     if (start) whenBooted(async () => { await goToSite(start.lat, start.lon, start.name); state.accountSiteId = null; state.accountDirty = false; if (state.view === 'design' && window.ArienPlanner) ArienPlanner.focusDesign(); });
     if (location.hash === '#admin') { const go = () => openDrawer('admin'); const iv = setInterval(() => { if ($('#boot').classList.contains('gone')) { clearInterval(iv); go(); } }, 400); }
-    window.__arien = { state, viewer: () => viewer, setTraces, hitterLabel, traceLayer: () => traceLayer, designChanged, rebuild: () => { geoms.clear(); rebuildAll(); }, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef, setView, forecastWeek, estimateYield, designSummary, flyToDesign, designBounds,
+    window.__arien = { state, viewer: () => viewer, modelLabel, setTraces, hitterLabel, traceLayer: () => traceLayer, designChanged, rebuild: () => { geoms.clear(); rebuildAll(); }, runPeriod, simulateNow, traceSkyline, measuredAligned, enu2ecef, setView, forecastWeek, estimateYield, designSummary, flyToDesign, designBounds,
       quickShadingLoss, saveNamedSite, listSites, openNamedSite, searchPlaces, suggestedName,
       dropAll: () => dropItems([...state.arrays]),
       yieldDebug: async (o) => runYield(await yearWeather(), null, { quiet: true, ...o, arrays: o.full ? state.arrays.map(a => ({ ...a })) : coarseArrays() }),

@@ -25,6 +25,12 @@ from pathlib import Path
 # GHI and diffuse for RW-GHI/HDKR, weather code and wind direction for the overview).
 VARS = ["temperature_2m", "cloud_cover", "wind_speed_10m", "wind_direction_10m", "weather_code",
         "shortwave_radiation", "diffuse_radiation"]
+# USM-1 (experimental) inputs, fetched in separate requests and merged by time, so a variable an endpoint lacks
+# cannot cost the main file. CAMS aerosol comes from the air-quality API. Not added to previous.json.
+USM_VARS = ["cloud_cover_low", "cloud_cover_mid", "cloud_cover_high", "precipitation", "surface_pressure",
+            "relative_humidity_2m"]
+USM_SNOW = ["snow_depth"]
+AOD_HOST = "https://air-quality-api.open-meteo.com/v1/air-quality"
 LEADS = [1, 2, 3, 4]
 DEFAULT_SITE = {"lat": 51.99564350977578, "lon": -0.9906258867252853}
 UA = f"arien-twin weather cache (https://github.com/{os.environ.get('GITHUB_REPOSITORY', 'arien-twin')})"
@@ -65,6 +71,32 @@ def common(s):
             "timeformat": "unixtime", "wind_speed_unit": "ms"}
 
 
+def merge(data, extra):
+    """Copy the hourly columns of another Open-Meteo answer into data, matched by time"""
+    h, x = data.get("hourly") or {}, extra.get("hourly") or {}
+    at = {t: i for i, t in enumerate(x.get("time") or [])}
+    for k, col in x.items():
+        if k == "time" or not isinstance(col, list):
+            continue
+        h[k] = [col[at[t]] if t in at else None for t in h.get("time") or []]
+
+
+def add_usm_inputs(data, host, params):
+    """Best effort: USM-1's extra variables and CAMS aerosol, each in its own request"""
+    span = {k: v for k, v in params.items() if k in ("past_days", "forecast_days", "start_date", "end_date")}
+    base = {k: v for k, v in params.items() if k != "hourly" and k not in span and k != "wind_speed_unit"}
+    for h, vars_ in ((host, USM_VARS), (host, USM_SNOW), (AOD_HOST, ["aerosol_optical_depth"])):
+        q = {**base, "hourly": ",".join(vars_), **span}
+        if h == AOD_HOST and "forecast_days" in q:
+            q["forecast_days"] = min(int(q["forecast_days"]), 7)
+        try:
+            merge(data, get(f"{h}?{urllib.parse.urlencode(q)}", tries=3))
+            print(f"    + {', '.join(vars_)}", flush=True)
+        except Exception as e:
+            print(f"    no {', '.join(vars_)}: {e}", flush=True)
+        time.sleep(1)
+
+
 def write(out, name, data):
     data["arien_cached_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     (out / name).write_text(json.dumps(data, separators=(",", ":")))
@@ -100,14 +132,17 @@ def main():
     for name, host, params in jobs:
         print(f"Fetching {name}", flush=True)
         try:
-            write(out, name, get(f"{host}?{urllib.parse.urlencode(params)}"))
+            data = get(f"{host}?{urllib.parse.urlencode(params)}")
+            if name != "previous.json":
+                add_usm_inputs(data, host, params)
+            write(out, name, data)
         except Exception as e:  # keep the previous copy
             ok = False
             print(f"  kept the previous {name}: {e}", flush=True)
         time.sleep(2)
 
     meta = {"site": s, "updated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "files": sorted(p.name for p in out.glob("*.json") if p.name != "meta.json"), "variables": VARS, "leads": LEADS}
+            "files": sorted(p.name for p in out.glob("*.json") if p.name != "meta.json"), "variables": VARS, "usm_variables": USM_VARS + USM_SNOW + ["aerosol_optical_depth"], "leads": LEADS}
     (out / "meta.json").write_text(json.dumps(meta, indent=1))
     return 0 if (out / "forecast.json").exists() else (0 if ok else 1)
 

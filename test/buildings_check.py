@@ -113,7 +113,7 @@ with sync_playwright() as p:
     page.evaluate('() => { __arien.state.objects.length = 0; }')
     page.click('.pl-left .saved-list .saved-open >> text=Buildings test'); time.sleep(2.5)
     after = sorted([json.dumps([o['poly'], o['floors'], o['roof'], round(o['dims']['height'], 3)]) for o in page.evaluate(HOUSES)])
-    check('buildings reopen with plan, floors and roof', before == after and len(after) == 2, f'{len(before)} -> {len(after)}')
+    check('buildings reopen with plan, floors and roof', before == after and len(after) == 2, f'{len(before)} -> {len(after)}' + ('' if before == after else ' | ' + ' vs '.join(x[:160] for x in before + after)))
     # --- report / dashboard data carry the floor plan
     page.click('#pl-sim'); time.sleep(5)
     page.screenshot(path=str(OUT / 'twin-buildings.png'))

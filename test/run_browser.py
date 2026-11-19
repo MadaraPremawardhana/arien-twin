@@ -56,7 +56,10 @@ def weather(qs):
                    'weather_code': 95 if (hrs % 40) == 20 else (61 if rain else (3 if N > 0.8 else 2 if N > 0.4 else 1)),
                    'wind_speed_10m': 4 + 2 * math.sin(hrs / 5), 'wind_direction_10m': (200 + hrs * 3) % 360,
                    'shortwave_radiation': round(ghi, 1), 'direct_radiation': round(ghi - dhi, 1), 'diffuse_radiation': round(dhi, 1),
-                   'direct_normal_irradiance': round((ghi - dhi) / max(0.05, math.sin(alt)), 1) if alt > 0 else 0}[base]
+                   'direct_normal_irradiance': round((ghi - dhi) / max(0.05, math.sin(alt)), 1) if alt > 0 else 0,
+                   # USM-1 inputs (cloud by layer, pressure, snow, CAMS aerosol)
+                   'cloud_cover_low': round(N * 100 if N > 0.6 else N * 40), 'cloud_cover_mid': round(N * 60), 'cloud_cover_high': 30,
+                   'surface_pressure': 1003.0, 'snow_depth': 0.0, 'aerosol_optical_depth': 0.09}[base]
             arr.append(val)
         out[v] = arr
     return {'latitude': lat, 'longitude': lon, 'elevation': 112.0, 'utc_offset_seconds': 0, 'timezone': 'Europe/London', 'timezone_abbreviation': 'GMT', 'hourly': out}
