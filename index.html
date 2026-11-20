@@ -474,7 +474,11 @@ body.view-flat #toasts { bottom: 24px; }
 .day-chip { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 4px; border-radius: 8px; border: 1px solid var(--line); background: rgba(150, 186, 206, 0.04); }
 .day-chip span { font: 600 10.5px var(--f-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .day-chip b { font: 600 17px var(--f-display); } .day-chip small { font-size: 10.5px; color: var(--dim); }
-.day-chip.on { border-color: rgba(243, 178, 60, 0.6); background: rgba(243, 178, 60, 0.08); }
+button.day-chip { font: inherit; color: inherit; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+button.day-chip:hover { border-color: var(--line-strong); background: rgba(150, 186, 206, 0.08); }
+button.day-chip:focus-visible { outline: 2px solid var(--sun); outline-offset: 2px; }
+.day-chip.on, button.day-chip.on:hover { border-color: rgba(243, 178, 60, 0.6); background: rgba(243, 178, 60, 0.08); }
+.fc-note { margin: 6px 0 8px; }
 .reco-day { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
 .reco-day-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
 .reco-day-head b { font: 600 13px var(--f-display); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg); }
@@ -4094,6 +4098,7 @@ body.view-flat #toasts { bottom: 24px; }
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
   let api = null, S = null, F = null, horizon = 10, busy = false, lastKey = '';
+  let fcDay = 0, fcKey = null; // which forecast day the forecast card shows (0 = today); back to today for a new forecast
   const C = () => root.ArienCharts;
   const num = (v, d = 0) => v == null || !isFinite(v) ? '—' : Number(v).toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
   const money = (v, d = 0) => (v < 0 ? '−' : '') + '£' + num(Math.abs(v), d);
@@ -4133,23 +4138,33 @@ body.view-flat #toasts { bottom: 24px; }
     const cf = F.cashflow({ kwp, annualDcKWh: y.total, selfUseShare: sc.selfUseShare, assumptions: S.finance });
     const y1 = cf.years[0], life = cf.totals(cf.lifetime);
     const monthly = y.months.map(v => v * (1 - a.systemLosses / 100) * (1 - a.firstYearDegradation / 100));
-    let recos = null, today = null;
+    let recos = null, today = null, day = null;
     const f = S.forecastRes;
     if (f && f.series) {
       recos = F.recommend(f.series.times, f.series.kw, { utcOffsetMs: api.utcOffset(), annualUse: a.annualUse, now: Date.now(), days: 3 });
-      const off = api.utcOffset(), d0 = new Date(Date.now() + off), t0 = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate()) - off;
-      const idx = f.series.times.map((t, i) => i).filter(i => f.series.times[i] >= t0 && f.series.times[i] < t0 + 86400000);
-      if (idx.length) {
-        const xs = idx.map(i => f.series.times[i]), ys = idx.map(i => f.series.kw[i] * (1 - a.systemLosses / 100));
-        const free = f.series.kwFree ? idx.map(i => f.series.kwFree[i] * (1 - a.systemLosses / 100)) : null;
-        const step = xs.length > 1 ? (xs[1] - xs[0]) / 3600000 : 0.25;
-        let pk = 0; ys.forEach((v, i) => { if (v > ys[pk]) pk = i; });
-        today = { t0, xs, ys, free: free && free.some((v, i) => v - ys[i] > 0.005) ? free : null, cloud: idx.map(i => f.series.cloud ? f.series.cloud[i] : null), load: xs.map(t => F.loadAt(t, a.annualUse, off)),
-          kwh: ys.reduce((s, v) => s + v * step, 0), peak: ys[pk], peakAt: xs[pk] };
-      }
+      if (fcKey !== f.at) { fcKey = f.at; fcDay = 0; }
+      fcDay = Math.max(0, Math.min(fcDay, (f.days || []).length - 1));
+      today = dayView(f, a, 0); day = fcDay ? dayView(f, a, fcDay) || today : today;
+      if (day) day.index = day === today ? 0 : fcDay;
     }
-    return { a, kwp, d, sc, scBatt, cf, y1, life, monthly, recos, today, y, f };
+    return { a, kwp, d, sc, scBatt, cf, y1, life, monthly, recos, today, day, y, f };
   }
+  /** The forecast curve for one day of the week (0 = today): power after system losses, home use, cloud */
+  function dayView(f, a, i) {
+    const off = api.utcOffset(), d0 = new Date(Date.now() + off), t0 = Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), d0.getUTCDate()) - off + i * 86400000;
+    const idx = f.series.times.map((t, k) => k).filter(k => f.series.times[k] >= t0 && f.series.times[k] < t0 + 86400000);
+    if (!idx.length) return null;
+    const xs = idx.map(k => f.series.times[k]), ys = idx.map(k => f.series.kw[k] * (1 - a.systemLosses / 100));
+    const free = f.series.kwFree ? idx.map(k => f.series.kwFree[k] * (1 - a.systemLosses / 100)) : null;
+    const step = xs.length > 1 ? (xs[1] - xs[0]) / 3600000 : 0.25;
+    let pk = 0; ys.forEach((v, k) => { if (v > ys[pk]) pk = k; });
+    const cloud = idx.map(k => f.series.cloud ? f.series.cloud[k] : null);
+    return { t0, xs, ys, free: free && free.some((v, k) => v - ys[k] > 0.005) ? free : null, cloud, load: xs.map(t => F.loadAt(t, a.annualUse, off)),
+      kwh: ys.reduce((s, v) => s + v * step, 0), peak: ys[pk], peakAt: xs[pk],
+      cloudMean: cloud.some(v => v != null) ? cloud.filter(v => v != null).reduce((s, v) => s + v, 0) / cloud.filter(v => v != null).length : null };
+  }
+  const longDay = (t) => { const d = new Date(t + api.utcOffset()); return `${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getUTCDay()]} ${d.getUTCDate()} ${api.MONTHS[d.getUTCMonth()]}`; };
+  const fcTitle = (m) => !m.day || !m.day.index ? 'Today’s forecast' : `${longDay(m.day.t0).split(' ')[0]}’s forecast`;
 
   // ---------------------------------------------------------------- render
   function card(id, title, body, extra = '', action = '') { return `<section class="db-card ${extra}" id="${id}"><header class="db-card-head"><h3>${title}</h3>${action}</header>${body}</section>`; }
@@ -4179,11 +4194,41 @@ body.view-flat #toasts { bottom: 24px; }
   const compassWord = (az) => ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'][Math.round(((az % 360) + 360) % 360 / 45) % 8];
 
   function forecastHtml(m) {
-    if (!m.today) return '<p class="hint">The forecast for today is not loaded yet.</p>';
-    const t = m.today, f = m.f;
-    const strip = f.days.map((d, i) => `<div class="day-chip${i === 0 ? ' on' : ''}"><span>${i === 0 ? 'Today' : api.DAYS[new Date(d.t + api.utcOffset()).getUTCDay()]}</span><b>${num(d.kwh * (1 - m.a.systemLosses / 100), 1)}</b><small>kWh</small></div>`).join('');
-    return `<div class="fc-head"><div><span class="fc-big">${num(t.kwh, 1)}</span> kWh expected today</div><div class="hint">Peak ${num(t.peak, 2)} kW at ${hhmm(t.peakAt)} · ${api.escapeHtml(api.modelLabel(f.model))}</div></div>
-      <div class="db-chart tall"><canvas id="db-today-chart"></canvas></div><div class="day-strip">${strip}</div>`;
+    if (!m.day) return '<p class="hint">The forecast for today is not loaded yet.</p>';
+    const t = m.day, f = m.f, i = t.index;
+    const strip = f.days.map((d, k) => `<button type="button" class="day-chip${k === i ? ' on' : ''}" data-day="${k}" aria-pressed="${k === i}" title="${k === 0 ? 'Today' : longDay(d.t)}: show its forecast">`
+      + `<span>${k === 0 ? 'Today' : api.DAYS[new Date(d.t + api.utcOffset()).getUTCDay()]}</span><b>${num(d.kwh * (1 - m.a.systemLosses / 100), 1)}</b><small>kWh</small></button>`).join('');
+    const when = i === 0 ? 'today' : 'on ' + longDay(t.t0);
+    const cloud = t.cloudMean != null ? ` · cloud ${num(t.cloudMean, 0)}% on average` : '';
+    const note = i === 0 ? '' : `<p class="hint fc-note">${i <= 2 ? 'Forecasts a day or two ahead are usually close.' : 'Further ahead the weather forecast is less certain, so treat this day as a guide.'} <button type="button" class="link" data-day="0">Back to today</button></p>`;
+    return `<div class="fc-head"><div><span class="fc-big">${num(t.kwh, 1)}</span> kWh expected ${when}</div><div class="hint">Peak ${num(t.peak, 2)} kW at ${hhmm(t.peakAt)}${cloud} · ${api.escapeHtml(api.modelLabel(f.model))}</div></div>
+      <div class="db-chart tall"><canvas id="db-today-chart" aria-label="Forecast for ${api.escapeHtml(when)}"></canvas></div>${note}
+      <div class="day-strip" role="group" aria-label="Pick a day to see its forecast">${strip}</div>`;
+  }
+  /** Show another day in the forecast card without redrawing the rest of the dashboard */
+  function pickDay(i, focus) {
+    fcDay = i;
+    const m = compute(); if (!m || !m.day) return;
+    const cardEl = $('#db-forecast'); if (!cardEl) return;
+    cardEl.querySelector('.db-card-head h3').textContent = fcTitle(m);
+    const head = cardEl.querySelector('.db-card-head');
+    while (head.nextSibling) head.nextSibling.remove();
+    head.insertAdjacentHTML('afterend', forecastHtml(m));
+    drawDay(m); wireDays();
+    if (focus) { const b = cardEl.querySelector(`.day-chip[data-day="${m.day.index}"]`); if (b) b.focus(); }
+  }
+  function wireDays() {
+    const cardEl = $('#db-forecast'); if (!cardEl) return;
+    $$('[data-day]', cardEl).forEach(b => { b.onclick = () => pickDay(+b.dataset.day, b.classList.contains('day-chip')); });
+    const strip = cardEl.querySelector('.day-strip');
+    if (strip) strip.onkeydown = (e) => {
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+      const n = strip.children.length; e.preventDefault(); pickDay((fcDay + (e.key === 'ArrowRight' ? 1 : n - 1)) % n, true);
+    };
+  }
+  function drawDay(m) {
+    const Ch = C(); if (!Ch || !m.day) return; const t = m.day;
+    Ch.dayCurve($('#db-today-chart'), { xs: t.xs, ys: t.ys, free: t.free, load: t.load, cloud: t.cloud.every(v => v == null) ? null : t.cloud, now: t.index === 0 ? Date.now() : null, xMin: t.t0, xMax: t.t0 + 86400000, offsetMs: api.utcOffset() });
   }
   function recoHtml(m) {
     if (!m.recos || !m.recos.length) return '<p class="hint">Recommendations need the forecast.</p>';
@@ -4300,7 +4345,7 @@ body.view-flat #toasts { bottom: 24px; }
     root_.innerHTML = `${sitesCard()}
       ${stale ? '<div class="db-stale">The design changed since these results. <button class="btn" id="db-rerun">Update results</button></div>' : ''}
       ${card('db-overview', 'Overview', overviewHtml(m), 'span-12')}
-      ${card('db-forecast', 'Today’s forecast', forecastHtml(m), 'span-7')}
+      ${card('db-forecast', fcTitle(m), forecastHtml(m), 'span-7')}
       ${card('db-reco', 'Recommendations', recoHtml(m), 'span-5')}
       ${card('db-shading', 'Shading from objects', shadingHtml(m), 'span-12')}
       ${card('db-finance', 'Financial overview', financeHtml(m), 'span-12')}
@@ -4321,6 +4366,7 @@ body.view-flat #toasts { bottom: 24px; }
     const st = $('#db-show-traces'); if (st) st.onclick = () => api.showTraces();
   }
   function wireCommon() {
+    wireDays();
     const ns = $('#db-new-site'); if (ns) ns.onclick = () => api.newSite();
     $$('[data-open]', $('#db-body')).forEach(b => {
       if (busy) b.setAttribute('aria-disabled', 'true');
@@ -4342,7 +4388,7 @@ body.view-flat #toasts { bottom: 24px; }
   }
   function drawCharts(m) {
     const Ch = C(); if (!Ch) return; const P = Ch.PALETTE();
-    if (m.today) Ch.dayCurve($('#db-today-chart'), { xs: m.today.xs, ys: m.today.ys, free: m.today.free, load: m.today.load, cloud: m.today.cloud.every(v => v == null) ? null : m.today.cloud, now: Date.now(), xMin: m.today.t0, xMax: m.today.t0 + 86400000, offsetMs: api.utcOffset() });
+    drawDay(m);
     const ys = m.cf.years.slice(0, horizon);
     Ch.combo($('#db-finance-chart'), { labels: ys.map(r => 'Y' + r.year), stacks: [{ label: 'Bill savings', values: ys.map(r => r.selfSaving), color: P.sun }, { label: 'Export income', values: ys.map(r => r.exportIncome), color: P.sky }],
       line: { label: 'Running total', values: ys.map(r => r.cumulative), color: P.good }, yTitle: '£ a year', y2: true, y2Title: '£ running total', zeroLine: true,

@@ -66,6 +66,29 @@ with sync_playwright() as p:
     check('bars have no outline', nb == 0, str(nb))
     rec = page.evaluate('() => [...document.querySelectorAll(".reco-day")].map(d => d.querySelector("b").textContent + ": " + [...d.querySelectorAll("li")].map(li => li.querySelector(".dev").textContent + " " + li.querySelector(".when").textContent).join(", "))')
     check('recommendations for today and the next days', len(rec) >= 2 and 'Washing machine' in rec[0], ' || '.join(rec)[:400])
+    # --- forecast day tiles: pick a day to see its curve
+    chips = page.evaluate('() => [...document.querySelectorAll("#db-forecast button.day-chip span")].map(b => b.textContent)')
+    check('seven forecast days, as buttons', len(chips) == 7 and chips[0].upper() == 'TODAY', json.dumps(chips))
+    fin0 = page.evaluate('() => { window.__finChart = Chart.getChart(document.getElementById("db-finance-chart")); return true; }')
+    page.click('#db-forecast button.day-chip[data-day="2"]'); time.sleep(0.6)
+    d2 = page.evaluate('''() => { const c = Chart.getChart(document.getElementById("db-today-chart")), m = ArienDashboard._compute(), xs = c.data.datasets[0].data.map(p => p.x);
+        return { head: document.querySelector("#db-forecast .fc-head").innerText, title: document.querySelector("#db-forecast h3").textContent,
+          pressed: [...document.querySelectorAll("#db-forecast button.day-chip")].map(b => b.getAttribute("aria-pressed")),
+          x0: Math.min(...xs), x1: Math.max(...xs), t0: m.today.t0, now: !!(c.config.plugins || []).find(p => p.id === "nowMarker"),
+          kwh: m.f.days[2].kwh * (1 - m.a.systemLosses / 100), shown: parseFloat(document.querySelector("#db-forecast .fc-big").textContent),
+          finSame: Chart.getChart(document.getElementById("db-finance-chart")) === window.__finChart }; }''')
+    check('day 3 shows its own curve, title and total', d2['x0'] >= d2['t0'] + 2 * 86400000 and d2['x1'] < d2['t0'] + 3 * 86400000 and "’s forecast" in d2['title'] and d2['title'] != 'Today’s forecast'
+          and ' on ' in d2['head'] and abs(d2['shown'] - round(d2['kwh'], 1)) < 0.051 and d2['pressed'][2] == 'true', json.dumps(d2)[:400])
+    check('no NOW line on another day; the rest of the dashboard is not redrawn', not d2['now'] and d2['finSame'], json.dumps([d2['now'], d2['finSame']]))
+    page.keyboard.press('ArrowRight'); time.sleep(0.4)
+    check('arrow keys move between days', page.evaluate('() => document.activeElement.dataset.day') == '3' and page.evaluate('() => document.querySelector("#db-forecast button.day-chip.on").dataset.day') == '3')
+    page.click('#db-forecast .fc-note button[data-day="0"]'); time.sleep(0.4)
+    t0 = page.evaluate('() => ({ title: document.querySelector("#db-forecast h3").textContent, now: !!(Chart.getChart(document.getElementById("db-today-chart")).config.plugins || []).find(p => p.id === "nowMarker") })')
+    check('Back to today', t0['title'] == 'Today’s forecast' and t0['now'], json.dumps(t0))
+    page.click('#db-forecast button.day-chip[data-day="5"]'); time.sleep(0.5)
+    page.evaluate('() => document.querySelector("#db-forecast").scrollIntoView()'); time.sleep(0.3)
+    page.screenshot(path=str(OUT / '03b-forecast-day.png'))
+    page.click('#db-forecast button.day-chip[data-day="0"]'); time.sleep(0.4)
     f10 = page.inner_text('#db-finance .fin-sum')
     page.click('#db-horizon button[data-h="20"]'); time.sleep(0.6)
     f20 = page.inner_text('#db-finance .fin-sum')
