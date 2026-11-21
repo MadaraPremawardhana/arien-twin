@@ -1,0 +1,38 @@
+{
+ "site": {
+  "lat": 51.99564350977578,
+  "lon": -0.9906258867252853
+ },
+ "updated": "2026-11-21T11:28:37Z",
+ "files": [
+  "forecast.json",
+  "historical.json",
+  "previous.json",
+  "year.json"
+ ],
+ "variables": [
+  "temperature_2m",
+  "cloud_cover",
+  "wind_speed_10m",
+  "wind_direction_10m",
+  "weather_code",
+  "shortwave_radiation",
+  "diffuse_radiation"
+ ],
+ "usm_variables": [
+  "cloud_cover_low",
+  "cloud_cover_mid",
+  "cloud_cover_high",
+  "precipitation",
+  "surface_pressure",
+  "relative_humidity_2m",
+  "snow_depth",
+  "aerosol_optical_depth"
+ ],
+ "leads": [
+  1,
+  2,
+  3,
+  4
+ ]
+}
